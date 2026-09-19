@@ -44,26 +44,24 @@ void WindowController::tickAutoCheckin(HWND hwnd) {
 
 void WindowController::tickSecond(HWND hwnd) {
     // 状态页每 3 秒刷新账号卡与今日请求计数
-    bool iconic = IsIconic(hwnd) != FALSE;
+    bool visible = IsWindowVisible(hwnd) && !IsIconic(hwnd);
     unsigned tick = statusTick_++; // 所有页面共享真实秒数，不能只在状态页递增。
-    if (!iconic && activePage_ == PAGE_STATUS && (tick % 3 == 0))
+    if (visible && activePage_ == PAGE_STATUS && (tick % 3 == 0))
         refreshStatusPage(hwnd);
     // 模型目录后台刷新完成后，若正停在运行总览则热填充（保留当前选中）
     int catalogVer = ModelCatalog::instance().version();
-    if (catalogVer != catalogVersion_) {
+    if (visible && activePage_ == PAGE_STATUS && pageStatus_ && catalogVer != catalogVersion_) {
         catalogVersion_ = catalogVer;
-        if (activePage_ == PAGE_STATUS && pageStatus_) {
-            refreshModelSettings(hwnd);
-            loadModelSelection(hwnd);
-        }
+        refreshModelSettings(hwnd);
+        loadModelSelection(hwnd);
     }
     // 倍率实时翻新：闲时窗口跨点/会员身份变更后，每 15s 比对一次标签，
     // 有变化才重建下拉并刷新详情（无变化不动控件，不打扰展开中的下拉）
-    if (!iconic && activePage_ == PAGE_STATUS && pageStatus_ && (tick % 15 == 0)) {
+    if (visible && activePage_ == PAGE_STATUS && pageStatus_ && (tick % 15 == 0)) {
         if (refreshModelSettings(hwnd)) loadModelSelection(hwnd);
     }
     // 使用记录页：每 2s 重读当前分页，积分落账后行内数字自动出现
-    if (!iconic && activePage_ == PAGE_USAGE && pageUsage_ && (tick % 2 == 0))
+    if (visible && activePage_ == PAGE_USAGE && pageUsage_ && (tick % 2 == 0))
         loadUsagePage(false);
     // 目录从未就绪时每 5 秒再试一次后台刷新
     if (!ModelCatalog::instance().ready() && (tick % 5 == 0) && !AccountPool::instance().accounts().empty())

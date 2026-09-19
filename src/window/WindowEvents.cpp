@@ -112,8 +112,16 @@ LRESULT WindowController::handleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         return 0;
     }
     case WM_SIZE:
+        if (wp == SIZE_MINIMIZED) {
+            releaseDrawingCache();
+            return 0;
+        }
         if (pageStatus_) layoutAll(hwnd);
         return 0;
+    case WM_SHOWWINDOW:
+        if (!wp) releaseDrawingCache();
+        else statusTick_ = 0; // 恢复后下一次定时器立即补齐当前页数据。
+        break;
     case WM_ERASEBKGND:
         return 1;
     case WM_PAINT: {

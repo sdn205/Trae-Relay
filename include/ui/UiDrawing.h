@@ -22,6 +22,9 @@ struct TextOptions {
 void initializeDrawing();
 void releaseDrawing();
 void releaseSurface(HWND hwnd);
+// 最小化/隐藏时回收画布、排版和字体缓存；保留原生输入控件引用的 HFONT。
+// 下次绘制按需重建，重入调用会延迟到所有 Canvas 结束后释放。
+void releaseDrawingCache();
 int s(HWND hwnd, int value);
 int logicalWidth(HWND hwnd);
 int logicalHeight(HWND hwnd);

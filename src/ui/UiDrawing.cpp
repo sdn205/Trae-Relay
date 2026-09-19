@@ -3,7 +3,6 @@
 #include <wincodec.h>
 #include <algorithm>
 #include <cmath>
-#include <map>
 #include <stdexcept>
 #include <vector>
 
@@ -28,54 +27,42 @@ struct DrawingResources {
     ComPtr<ID2D1StrokeStyle> focusStroke;
     ComPtr<IWICImagingFactory> imaging;
     ComPtr<IDWriteTextFormat> formats[FCount];
-    HFONT inputFonts[FCount]{};
-    bool ownsCom = false;
 };
+struct DrawingApartment {
+    bool ownsCom;
+    DrawingApartment() {
+        HRESULT result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        if (FAILED(result) && result != RPC_E_CHANGED_MODE) require(result, "Cannot initialize COM");
+        ownsCom = SUCCEEDED(result);
+    }
+    ~DrawingApartment() { if (ownsCom) CoUninitialize(); }
+};
+std::unique_ptr<DrawingApartment> apartment;
 std::unique_ptr<DrawingResources> resources;
+// 原生输入控件仍引用这些 HFONT；隐藏窗口只能回收可重建的绘图资源。
+HFONT inputFonts[FCount]{};
+unsigned activeCanvases = 0;
+bool releasePending = false;
 
 struct Surface {
-    HDC memory = nullptr;
-    HBITMAP bitmap = nullptr;
-    HGDIOBJ oldBitmap = nullptr;
-    int width = 0, height = 0;
+    HWND owner = nullptr;
     ComPtr<ID2D1DCRenderTarget> target;
     ComPtr<ID2D1SolidColorBrush> brush;
-    ~Surface() {
-        target.Reset(); brush.Reset();
-        if (memory && oldBitmap) SelectObject(memory, oldBitmap);
-        if (bitmap) DeleteObject(bitmap);
-        if (memory) DeleteDC(memory);
-    }
-    void resize(int w, int h) {
-        if (width == w && height == h && bitmap) return;
-        target.Reset(); brush.Reset();
-        if (!memory) memory = CreateCompatibleDC(nullptr);
-        if (!memory) throw std::runtime_error("Cannot create UI drawing surface");
-        if (oldBitmap) SelectObject(memory, oldBitmap);
-        if (bitmap) DeleteObject(bitmap);
-        bitmap = nullptr;
-        BITMAPINFO info{};
-        info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        info.bmiHeader.biWidth = w;
-        info.bmiHeader.biHeight = -h;
-        info.bmiHeader.biPlanes = 1;
-        info.bmiHeader.biBitCount = 32;
-        info.bmiHeader.biCompression = BI_RGB;
-        void* pixels = nullptr;
-        bitmap = CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, &pixels, nullptr, 0);
-        if (!bitmap) throw std::runtime_error("Cannot allocate UI bitmap");
-        oldBitmap = SelectObject(memory, bitmap);
-        width = w; height = h;
-    }
-    void prepare(UINT dpiValue) {
+    void prepare(HWND hwnd, HDC destination, const RECT& bounds, UINT dpiValue) {
         if (!target) {
-            auto props = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_DEFAULT,
+            auto props = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_SOFTWARE,
                 D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE));
-            require(resources->factory->CreateDCRenderTarget(&props, &target), "Cannot initialize Direct2D surface");
-            require(target->CreateSolidColorBrush(color(C_TEXT), &brush), "Cannot initialize UI brush");
+            ComPtr<ID2D1DCRenderTarget> nextTarget;
+            ComPtr<ID2D1SolidColorBrush> nextBrush;
+            require(resources->factory->CreateDCRenderTarget(&props, &nextTarget), "Cannot initialize Direct2D surface");
+            require(nextTarget->CreateSolidColorBrush(color(C_TEXT), &nextBrush), "Cannot initialize UI brush");
+            target = std::move(nextTarget);
+            brush = std::move(nextBrush);
         }
-        RECT bounds{0, 0, width, height};
-        require(target->BindDC(memory, &bounds), "Cannot bind Direct2D surface");
+        // DCRenderTarget 自带离屏缓冲，在 EndDraw 时提交到目标 DC，
+        // 无需为每个页面/控件再保留一份 DIB 和内存 DC。
+        require(target->BindDC(destination, &bounds), "Cannot bind Direct2D surface");
+        owner = hwnd;
         target->SetDpi(float(dpiValue), float(dpiValue));
         target->SetTransform(D2D1::Matrix3x2F::Identity());
         target->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
@@ -83,7 +70,9 @@ struct Surface {
         target->SetTextRenderingParams(resources->textParams.Get());
     }
 };
-std::map<HWND, std::shared_ptr<Surface>> surfaces;
+// UI 绘制在同一个线程顺序执行，只缓存一个可重绑的渲染目标。
+// 重入绘制单独借用临时目标，不能重绑仍处于 BeginDraw 内的目标。
+std::shared_ptr<Surface> cachedSurface;
 
 ComPtr<IDWriteTextLayout> textLayout(std::wstring_view value, R bounds, FontId font, TextOptions options) {
     ComPtr<IDWriteTextLayout> layout;
@@ -107,12 +96,11 @@ ComPtr<IDWriteTextLayout> textLayout(std::wstring_view value, R bounds, FontId f
 
 void initializeDrawing() {
     if (resources) return;
+    if (!apartment) apartment = std::make_unique<DrawingApartment>();
     auto next = std::make_unique<DrawingResources>();
-    HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    if (FAILED(com) && com != RPC_E_CHANGED_MODE) require(com, "Cannot initialize COM");
-    next->ownsCom = SUCCEEDED(com);
     require(D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, next->factory.GetAddressOf()), "Direct2D initialization failed");
-    require(DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+    // 独立 factory 的字体缓存随 UI 休眠释放；共享 factory 会继续保留进程级缓存。
+    require(DWriteCreateFactory(DWRITE_FACTORY_TYPE_ISOLATED, __uuidof(IDWriteFactory),
         reinterpret_cast<IUnknown**>(next->write.GetAddressOf())), "DirectWrite initialization failed");
     // 灰阶文字关闭额外对比度增强，保留小字号笔画边缘的平滑过渡。
     require(next->write->CreateCustomRenderingParams(2.2f, 0.f, 0.f, DWRITE_PIXEL_GEOMETRY_FLAT,
@@ -133,59 +121,62 @@ void initializeDrawing() {
     resources = std::move(next);
 }
 
-void releaseSurface(HWND hwnd) { surfaces.erase(hwnd); }
+void releaseSurface(HWND hwnd) {
+    if (cachedSurface && cachedSurface->owner == hwnd) cachedSurface.reset();
+}
+void releaseDrawingCache() {
+    cachedSurface.reset();
+    // 隐藏消息可能重入绘制；最后一个 Canvas 结束后再释放它依赖的 factory。
+    releasePending = activeCanvases != 0;
+    if (!releasePending) resources.reset();
+}
 void releaseDrawing() {
-    surfaces.clear();
+    releaseDrawingCache();
     deleteFonts();
-    bool ownsCom = resources && resources->ownsCom;
-    resources.reset();
-    if (ownsCom) CoUninitialize();
+    apartment.reset();
 }
 void createFonts(UINT dpiValue) {
-    initializeDrawing(); deleteFonts();
+    deleteFonts();
     for (int i = 0; i < FCount; ++i) {
         const auto& spec = kFontSpecs[i];
-        resources->inputFonts[i] = CreateFontW(-MulDiv(spec.size, dpiValue, spec.unit == FontUnit::Points ? 72 : 96),
+        inputFonts[i] = CreateFontW(-MulDiv(spec.size, dpiValue, spec.unit == FontUnit::Points ? 72 : 96),
             0, 0, 0, spec.weight, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
             CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, spec.face);
     }
 }
 void deleteFonts() {
-    if (!resources) return;
-    for (auto& font : resources->inputFonts) { if (font) DeleteObject(font); font = nullptr; }
+    for (auto& font : inputFonts) { if (font) DeleteObject(font); font = nullptr; }
 }
-HFONT ctrlFont(FontId id) { return resources->inputFonts[id]; }
+HFONT ctrlFont(FontId id) { return inputFonts[id]; }
 
 struct Canvas::Impl {
     std::shared_ptr<Surface> surface;
     HWND owner;
-    HDC destination;
-    RECT pixels;
     float scale;
 };
 Canvas::Canvas(HWND owner, HDC destination, RECT pixels, COLORREF background) {
     if (pixels.right <= pixels.left || pixels.bottom <= pixels.top) return;
     initializeDrawing();
-    auto& surface = surfaces[owner];
-    if (!surface) surface = std::make_shared<Surface>();
+    auto surface = cachedSurface && cachedSurface.use_count() == 1
+        ? cachedSurface : std::make_shared<Surface>();
+    if (!cachedSurface) cachedSurface = surface;
     UINT dpiValue = dpi::forWindow(owner);
-    surface->resize(pixels.right - pixels.left, pixels.bottom - pixels.top);
-    surface->prepare(dpiValue);
-    impl_ = std::make_unique<Impl>(Impl{surface, owner, destination, pixels, dpiValue / 96.f});
+    surface->prepare(owner, destination, pixels, dpiValue);
+    impl_ = std::make_unique<Impl>(Impl{surface, owner, dpiValue / 96.f});
     surface->target->BeginDraw();
     surface->target->Clear(color(background));
+    ++activeCanvases;
 }
 Canvas::~Canvas() {
     if (!impl_) return;
     auto& surface = *impl_->surface;
     HRESULT result = surface.target->EndDraw();
-    if (SUCCEEDED(result)) {
-        BitBlt(impl_->destination, impl_->pixels.left, impl_->pixels.top, surface.width, surface.height,
-            surface.memory, 0, 0, SRCCOPY);
-    } else {
+    if (FAILED(result)) {
         surface.brush.Reset(); surface.target.Reset();
         InvalidateRect(impl_->owner, nullptr, FALSE);
     }
+    impl_.reset();
+    if (--activeCanvases == 0 && releasePending) releaseDrawingCache();
 }
 ID2D1DCRenderTarget* Canvas::target() const { return impl_ ? impl_->surface->target.Get() : nullptr; }
 float Canvas::dpiScale() const { return impl_ ? impl_->scale : 1.f; }
@@ -391,6 +382,7 @@ void paintGroupLabel(Canvas& canvas, int x, int y, const wchar_t* value) { canva
 void paintPageHeader(Canvas& canvas, int, const wchar_t* title) { canvas.text(title, {40, 26, 400, 30}, FTitle, C_TEXT); }
 
 bool savePng(HBITMAP bitmap, const std::wstring& path) {
+    initializeDrawing();
     ComPtr<IWICBitmap> source; ComPtr<IWICStream> stream; ComPtr<IWICBitmapEncoder> encoder;
     ComPtr<IWICBitmapFrameEncode> frame; ComPtr<IPropertyBag2> properties;
     auto* imaging = resources->imaging.Get();
