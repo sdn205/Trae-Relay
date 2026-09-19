@@ -7,6 +7,18 @@ R comboCtrl(R box, int dropH) { return { box.x, box.y, box.w, dropH }; }
 int usageVisibleRows(int height) {
     return std::max(1, (height - 104 - kUsageTop) / kUsageRowH);
 }
+UsageScrollbar usageScrollbar(int width, int height, int rowCount, int scroll) {
+    UsageScrollbar bar;
+    const int visible = usageVisibleRows(height);
+    bar.maxScroll = std::max(0, rowCount - visible);
+    if (!bar.maxScroll) return bar;
+    // 放在表格右侧留白，不挤压现有列宽；轨道只覆盖数据区。
+    bar.track = {width - 28, kUsageTop, 8, std::max(0, height - 104 - kUsageTop)};
+    const int thumbHeight = std::min(bar.track.h, std::max(28, MulDiv(bar.track.h, visible, rowCount)));
+    const int offset = MulDiv(bar.track.h - thumbHeight, std::clamp(scroll, 0, bar.maxScroll), bar.maxScroll);
+    bar.thumb = {bar.track.x, bar.track.y + offset, bar.track.w, thumbHeight};
+    return bar;
+}
 int pagerY(int height) { return height - 86; }
 
 UsageCols usageColumns(int width) {

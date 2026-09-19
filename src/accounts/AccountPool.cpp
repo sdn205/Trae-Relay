@@ -572,9 +572,42 @@ static bool usageParseLine(const std::string& line, UsageRecord& r) {
     return true;
 }
 
-// 调用方须持有 m_usageMtx。首次访问时装载全部 jsonl 到内存（顺序与原文件扫描一致：
-// 文件名字典序倒序 = 新→旧，文件内行倒序 = 新→旧）；顺带做一次 30 天过期清理
-//（原实现在每次分页查询里执行，现收敛到装载时一次）。
+// 从尾部分块读取，达到上限即停止，不把整个历史文件装入内存。
+static void usageReadRecent(FILE* file, std::vector<UsageRecord>& rows, size_t limit) {
+    if (_fseeki64(file, 0, SEEK_END) != 0) return;
+    auto end = _ftelli64(file);
+    std::string reversed;
+    bool oversized = false;
+    const auto appendLine = [&] {
+        if (!oversized && !reversed.empty()) {
+            std::reverse(reversed.begin(), reversed.end());
+            UsageRecord record;
+            if (usageParseLine(reversed, record)) rows.push_back(std::move(record));
+        }
+        reversed.clear();
+        oversized = false;
+    };
+    char block[4096];
+    while (end > 0 && rows.size() < limit) {
+        const auto start = std::max<__int64>(0, end - static_cast<__int64>(sizeof(block)));
+        if (_fseeki64(file, start, SEEK_SET) != 0) return;
+        const size_t length = fread(block, 1, static_cast<size_t>(end - start), file);
+        if (!length) return;
+        for (size_t i = length; i > 0 && rows.size() < limit; --i) {
+            const char c = block[i - 1];
+            if (c == '\n') appendLine();
+            else if (c != '\r' && !oversized) {
+                // 与顺序读取的 2048 字节行缓冲保持一致，损坏长行不会膨胀内存。
+                if (reversed.size() < 2047) reversed.push_back(c);
+                else oversized = true;
+            }
+        }
+        end = start;
+    }
+    if (end == 0 && rows.size() < limit) appendLine();
+}
+
+// 调用方须持有 m_usageMtx。首次访问只加载最新 100 条，并沿用 30 天过期清理。
 void AccountPool::usageEnsureCacheLocked() {
     if (m_usageCacheLoaded) return;
     m_usageCacheLoaded = true;
@@ -609,28 +642,29 @@ void AccountPool::usageEnsureCacheLocked() {
         FindClose(h);
     }
     std::sort(files.rbegin(), files.rend()); // 文件名含日期，字典序倒序=新→旧
+    m_usageCache.reserve(kUsageHistoryLimit);
     for (auto& name : files) {
+        if (m_usageCache.size() >= kUsageHistoryLimit) break;
         FILE* f = _wfopen((dir + L"\\" + name).c_str(), L"rb");
         if (!f) continue;
-        std::vector<UsageRecord> lines;
-        char buf[2048];
-        while (fgets(buf, sizeof(buf), f)) {
-            std::string line(buf);
-            while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
-            UsageRecord r;
-            if (usageParseLine(line, r)) lines.push_back(std::move(r));
-        }
+        usageReadRecent(f, m_usageCache, kUsageHistoryLimit);
         fclose(f);
-        for (auto it = lines.rbegin(); it != lines.rend(); ++it) // 文件内新→旧
-            m_usageCache.push_back(std::move(*it));
     }
 }
 
 // 落账一条：写盘 + 插入缓存头（分页第 0 页 = 最新记录，落账即可见）
 void AccountPool::usageAppend(const UsageRecord& r) {
-    usageAppendLine(r);
     std::lock_guard<std::mutex> lk(m_usageMtx);
-    if (m_usageCacheLoaded) m_usageCache.insert(m_usageCache.begin(), r);
+    // 写盘与汇总/缓存更新同锁，避免首次读取与落账并发时重复计数。
+    usageAppendLine(r);
+    if (m_usageCacheLoaded) {
+        if (m_usageCache.size() == kUsageHistoryLimit) m_usageCache.pop_back();
+        m_usageCache.insert(m_usageCache.begin(), r);
+    }
+    if (r.ts >= m_usageTodayStart && r.ts < m_usageTodayEnd) {
+        ++m_usageTodayCount;
+        m_usageTodayTokens += r.in + r.out + r.cache;
+    }
 }
 
 int AccountPool::usageTotalCount() {
@@ -641,7 +675,6 @@ int AccountPool::usageTotalCount() {
 
 long long AccountPool::usageCountToday(long long* tokens) {
     std::lock_guard<std::mutex> lk(m_usageMtx);
-    usageEnsureCacheLocked();
     const time_t now = time(nullptr);
     struct tm local {};
     localtime_s(&local, &now);
@@ -653,23 +686,38 @@ long long AccountPool::usageCountToday(long long* tokens) {
     ++local.tm_mday;
     local.tm_isdst = -1;
     const time_t end = mktime(&local);
-    long long count = 0;
-    long long totalTokens = 0;
-    for (const auto& r : m_usageCache) {
-        if (r.ts < start || r.ts >= end) continue;
-        ++count;
-        totalTokens += r.in + r.out + r.cache;
+    if (m_usageTodayStart != start) {
+        m_usageTodayStart = start;
+        m_usageTodayEnd = end;
+        m_usageTodayCount = 0;
+        m_usageTodayTokens = 0;
+        // 首次访问或跨日时逐行汇总当天文件，只保存计数，不保留所有记录对象。
+        localtime_s(&local, &now);
+        char day[16]{};
+        strftime(day, sizeof(day), "%Y%m%d", &local);
+        FILE* file = _wfopen(usageWiden(usageDirPath() + "\\usage-" + day + ".jsonl").c_str(), L"rb");
+        if (file) {
+            char line[2048];
+            while (fgets(line, sizeof(line), file)) {
+                UsageRecord record;
+                if (!usageParseLine(line, record) || record.ts < start || record.ts >= end) continue;
+                ++m_usageTodayCount;
+                m_usageTodayTokens += record.in + record.out + record.cache;
+            }
+            fclose(file);
+        }
     }
-    if (tokens) *tokens = totalTokens;
-    return count;
+    if (tokens) *tokens = m_usageTodayTokens;
+    return m_usageTodayCount;
 }
 
 std::vector<UsageRecord> AccountPool::usagePage(int page, int limit, bool& hasMore) {
     hasMore = false;
+    if (page < 0 || limit <= 0) return {};
     std::lock_guard<std::mutex> lk(m_usageMtx);
     usageEnsureCacheLocked();
-    int skip = page * limit;
-    if (skip >= (int)m_usageCache.size()) return {};
+    size_t skip = static_cast<size_t>(page) * limit;
+    if (skip >= m_usageCache.size()) return {};
     size_t end = std::min(m_usageCache.size(), (size_t)skip + limit);
     hasMore = end < m_usageCache.size();
     return std::vector<UsageRecord>(m_usageCache.begin() + skip, m_usageCache.begin() + end);

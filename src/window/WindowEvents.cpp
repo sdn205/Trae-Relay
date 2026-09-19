@@ -2,6 +2,7 @@
 #include "app/Config.h"
 #include "app/Service.h"
 #include "common/Crypto.h"
+#include "ui/Dpi.h"
 #include <algorithm>
 #include <chrono>
 #include <windowsx.h>
@@ -23,17 +24,53 @@ LRESULT WindowController::handlePageMessage(HWND hwnd, UINT msg, WPARAM wp, LPAR
     case WM_MOUSEWHEEL: {
         if (page != PAGE_USAGE || usageRows_.empty()) break;
         short delta = GET_WHEEL_DELTA_WPARAM(wp);
-        int height = logicalHeight(hwnd);
-        int visible = usageVisibleRows(height);
-        int maxScroll = std::max(0, (int)usageRows_.size() - visible);
-        int nu = usageScroll_ + (delta > 0 ? -2 : 2);
-        nu = std::max(0, std::min(maxScroll, nu));
-        if (nu != usageScroll_) {
-            usageScroll_ = nu;
+        if (delta) scrollUsageTo(usageScroll_ + (delta > 0 ? -2 : 2));
+        return 0;
+    }
+    case WM_LBUTTONDOWN: {
+        if (page != PAGE_USAGE) break;
+        const auto bar = usageScrollbar(logicalWidth(hwnd), logicalHeight(hwnd),
+            static_cast<int>(usageRows_.size()), usageScroll_);
+        const UINT dpiValue = dpi::forWindow(hwnd);
+        const int x = MulDiv(GET_X_LPARAM(lp), 96, dpiValue);
+        const int y = MulDiv(GET_Y_LPARAM(lp), 96, dpiValue);
+        // 视觉宽度 8 DIP，命中区向两侧各扩 6 DIP，方便拖动。
+        if (bar.maxScroll <= 0 || x < bar.track.x - 6 || x >= bar.track.x + bar.track.w + 6 ||
+            y < bar.track.y || y >= bar.track.y + bar.track.h) break;
+        if (y >= bar.thumb.y && y < bar.thumb.y + bar.thumb.h) {
+            usageDragOffset_ = y - bar.thumb.y;
+            usageDragging_ = true;
+            SetCapture(hwnd);
             InvalidateRect(hwnd, nullptr, FALSE);
+        } else {
+            const int step = usageVisibleRows(logicalHeight(hwnd));
+            scrollUsageTo(usageScroll_ + (y < bar.thumb.y ? -step : step));
         }
         return 0;
     }
+    case WM_MOUSEMOVE:
+        if (page == PAGE_USAGE && usageDragging_) {
+            const auto bar = usageScrollbar(logicalWidth(hwnd), logicalHeight(hwnd),
+                static_cast<int>(usageRows_.size()), usageScroll_);
+            const int travel = bar.track.h - bar.thumb.h;
+            const int y = MulDiv(GET_Y_LPARAM(lp), 96, dpi::forWindow(hwnd));
+            if (travel > 0)
+                scrollUsageTo(MulDiv(std::clamp(y - usageDragOffset_ - bar.track.y, 0, travel), bar.maxScroll, travel));
+            return 0;
+        }
+        break;
+    case WM_SHOWWINDOW:
+        if (wp) break;
+        [[fallthrough]];
+    case WM_LBUTTONUP:
+    case WM_CAPTURECHANGED:
+    case WM_CANCELMODE:
+        if (page == PAGE_USAGE && usageDragging_) {
+            usageDragging_ = false;
+            if (GetCapture() == hwnd) ReleaseCapture();
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        break;
     case WM_COMMAND:
     case WM_NOTIFY:
     case WM_DRAWITEM:
@@ -179,6 +216,13 @@ LRESULT WindowController::handleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             if (usagePageIdx_ > 0) { usagePageIdx_--; usageScroll_ = 0; loadUsagePage(); }
         } else if (id == IDC_BTN_PAGE_NEXT && code == BN_CLICKED) {
             if (usageHasMore_) { usagePageIdx_++; usageScroll_ = 0; loadUsagePage(); }
+        } else if (def && def->kind == Ck::PagerSlot && code == BN_CLICKED) {
+            const int pageNumber = pagerSlotPage_[id - IDC_PAGER_SLOT0];
+            if (pageNumber > 0 && pageNumber - 1 != usagePageIdx_) {
+                usagePageIdx_ = pageNumber - 1;
+                usageScroll_ = 0;
+                loadUsagePage();
+            }
         }
         else if ((id == IDC_BTN_COPYURL || id == IDC_BTN_COPY) && code == BN_CLICKED) {
             if (id == IDC_BTN_COPY && !applyApiKeyEdit(hwnd)) return 0;

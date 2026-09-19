@@ -284,7 +284,17 @@ void drawOwnerButton(const DRAWITEMSTRUCT* item, ButtonState state) {
     else if (disabled) { background = C_CANVAS; text = C_DISABLED_TEXT; }
     else if (pressed) background = C_BUTTON_PRESS;
     canvas.roundRect(box, current ? ButtonMetrics::selectedPageCorner : ButtonMetrics::corner, background, border);
-    if (def->icon != ButtonIcon::None) canvas.icon(def->icon, box, text);
+    if (kind == Ck::PagerBtn) {
+        const float cx = box.x + box.w * 0.5f, cy = box.y + box.h * 0.5f;
+        const float direction = def->id == IDC_BTN_PAGE_PREV ? -1.f : 1.f;
+        const Point arrow[] = {
+            {cx - direction * 3, cy - 6},
+            {cx + direction * 3, cy},
+            {cx - direction * 3, cy + 6}
+        };
+        canvas.polyline(arrow, 3, disabled ? C_DISABLED_ARROW : C_MUTED, 1.5f);
+    }
+    else if (def->icon != ButtonIcon::None) canvas.icon(def->icon, box, text);
     else canvas.text(label, box, def->font, text, {TextAlign::Center});
 }
 

@@ -123,12 +123,13 @@ public:
     void usageRecordPending(std::shared_ptr<Account> acc, const ModelCaps& model,
                             const std::string& endpoint,
                             long long inTok, long long outTok, long long cacheTok, int ms);
-    // 分页读取已落账记录：page 0 = 最新 limit 条；hasMore 表示还有更早的。
-    // 直接读文件（落账即持久），UI 翻页/实时刷新同源。
+    static constexpr int kUsageHistoryLimit = 100;
+    // 分页读取最近 100 条已落账记录：page 0 = 最新 limit 条。
+    // hasMore 仅表示这 100 条内还有更早记录；UI 翻页/实时刷新同源。
     std::vector<UsageRecord> usagePage(int page, int limit, bool& hasMore);
-    // 已落账总条数（分页器算总页数用）
+    // 已加载记录数（最多 100，分页器算总页数用）。
     int usageTotalCount();
-    // Count records in the current local day using the shared usage cache.
+    // 今日汇总独立于分页缓存，包含当天全部已落账记录。
     long long usageCountToday(long long* tokens = nullptr);
     // 退出时把未落账的记录写盘（积分未知口径），防丢条目。
     void usageFlushPending();
@@ -149,10 +150,12 @@ private:
     std::atomic<bool> m_creditWorkerBusy{ false };
     // 使用记录：待积分回填的请求（按收尾顺序），回填后即落盘
     std::mutex m_usageMtx;
-    // 使用记录内存缓存（新→旧，与分页顺序一致）：UI 分页/轮询读内存，
-    // 落账时插缓存头；装载只在首次访问做一次，顺带做一次 30 天过期清理。
+    // 使用记录内存缓存（新→旧，最多 100 条）：从文件尾部按需读取，
+    // 落账时插入头部并淘汰最旧项，磁盘记录仍按原有 30 天策略保留。
     std::vector<UsageRecord> m_usageCache;
     bool m_usageCacheLoaded = false;
+    time_t m_usageTodayStart = 0, m_usageTodayEnd = 0;
+    long long m_usageTodayCount = 0, m_usageTodayTokens = 0;
     void usageEnsureCacheLocked();               // 调用方须持有 m_usageMtx
     void usageAppend(const UsageRecord& r);      // 写盘 + 插入缓存头
     struct UsagePending {

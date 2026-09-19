@@ -170,10 +170,16 @@ void paintUsageTable(Canvas& dc, int width, int height, const UsageTableView& vi
         }
     }
     wchar_t info[64]{};
-    swprintf(info, 64, L"第 %d / %d 页 · 每页 50 条", view.pageIndex + 1, view.totalPages);
+    swprintf(info, 64, L"第 %d / %d 页 · 每页 %d 条 · 最近 %d 条",
+        view.pageIndex + 1, view.totalPages, kUsagePageSize, AccountPool::kUsageHistoryLimit);
     drawText(dc, info, { view.pagerX - 16 - 360, pagerY(height), 360, 34 }, FBody, C_MUTED,
              DT_RIGHT | DT_SINGLELINE | DT_VCENTER);
     paintUsageRows(dc, width, height, view);
+    const auto bar = usageScrollbar(width, height, static_cast<int>(view.rows.size()), view.scroll);
+    if (bar.maxScroll > 0 && bar.track.h > 0) {
+        dc.roundRect(bar.track, 4, C_BORDER);
+        dc.roundRect(bar.thumb, 4, view.dragging ? C_ACCENT : C_BAR_MUTED);
+    }
 }
 
 

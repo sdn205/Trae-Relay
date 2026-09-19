@@ -38,10 +38,12 @@ private:
     HWND navUsage_ = nullptr;
     HWND endpointTooltips_ = nullptr;
     int activePage_ = visual::PAGE_STATUS;
-    // 使用记录分页状态（页大小固定 50，第 0 页=最新 50 条）
+    // 使用记录分页状态（每页 20 条，最多保留最近 100 条）
     int usagePageIdx_ = 0;
     bool usageHasMore_ = false;
-    int usageScroll_ = 0; // 页内滚动（滚轮），0 = 最新一条在顶
+    int usageScroll_ = 0; // 滚轮与右侧滑块共用页内位置，0 = 最新一条在顶
+    bool usageDragging_ = false;
+    int usageDragOffset_ = 0;
     bool usageEmpty_ = false;
     int usageTotalPages_ = 1;
     int pagerSlotPage_[7] = { 0 }; // 各页码槽对应页（0=空槽）；1-based
@@ -130,6 +132,7 @@ private:
     void usagePagerItems(int cur, int total, int* slots);
     void layoutUsagePager(const UsagePagerLayout& layout);
     void loadUsagePage(bool forcePaint = true);
+    void scrollUsageTo(int position);
     void layoutUsagePage();
     void createUsageControls();
     void renderChrome(visual::Canvas& dc, HWND hwnd);

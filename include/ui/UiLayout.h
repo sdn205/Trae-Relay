@@ -12,7 +12,13 @@ R comboCtrl(R box, int dropH);
 // 使用记录行几何（行区顶部/行高/可见行数）：表格绘制、TOKEN 列、滚轮步进三处同源
 constexpr int kUsageTop = 126;
 constexpr int kUsageRowH = 48;
+constexpr int kUsagePageSize = 20;
 int usageVisibleRows(int height);
+struct UsageScrollbar {
+    R track{}, thumb{};
+    int maxScroll = 0;
+};
+UsageScrollbar usageScrollbar(int width, int height, int rowCount, int scroll);
 // 分页条（‹ 槽×7 ›）纵坐标：装载布局与"第 x/y 页"信息文字同源
 int pagerY(int height);
 struct UsageCols {

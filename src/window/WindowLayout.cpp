@@ -13,7 +13,7 @@ void WindowController::renderPageContent(HDC target, HWND hwnd, int page) {
     if (page == PAGE_STATUS) paintStatusPage(dc, width, height);
     else if (page == PAGE_USAGE) {
         paintUsageTable(dc, width, height, { usageRows_, usageScroll_,
-            usagePageIdx_, usageTotalPages_, pagerX_, usageEmpty_ });
+            usagePageIdx_, usageTotalPages_, pagerX_, usageEmpty_, usageDragging_ });
     }
     else paintSettingsPage(dc, width, height);
 }

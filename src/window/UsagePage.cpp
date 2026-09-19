@@ -46,7 +46,7 @@ void WindowController::layoutUsagePager(const UsagePagerLayout& layout) {
         ShowWindow(b, layout.empty ? SW_HIDE : SW_SHOW);
         InvalidateRect(b, nullptr, FALSE); // 页码文字不变时，当前页高亮仍可能改变。
     };
-    placeBtn(IDC_BTN_PAGE_PREV, L"‹", x, layout.page > 0);
+    placeBtn(IDC_BTN_PAGE_PREV, L"上一页", x, layout.page > 0);
     x += btnW + gap;
     for (int i = 0; i < 7; ++i) {
         int id = IDC_PAGER_SLOT0 + i;
@@ -58,7 +58,7 @@ void WindowController::layoutUsagePager(const UsagePagerLayout& layout) {
         placeBtn(id, label, x, slots[i] != -1);
         x += btnW + gap;
     }
-    placeBtn(IDC_BTN_PAGE_NEXT, L"›", x, layout.hasMore);
+    placeBtn(IDC_BTN_PAGE_NEXT, L"下一页", x, layout.hasMore);
     InvalidateRect(layout.window, nullptr, FALSE);
 }
 
@@ -67,9 +67,10 @@ void WindowController::loadUsagePage(bool forcePaint) {
     int width = logicalWidth(pageUsage_);
     int height = logicalHeight(pageUsage_);
     bool hasMore = false;
-    auto rows = AccountPool::instance().usagePage(usagePageIdx_, 50, hasMore);
     int total = AccountPool::instance().usageTotalCount();
-    int totalPages = std::max(1, (total + 49) / 50);
+    int totalPages = std::max(1, (total + kUsagePageSize - 1) / kUsagePageSize);
+    usagePageIdx_ = std::clamp(usagePageIdx_, 0, totalPages - 1);
+    auto rows = AccountPool::instance().usagePage(usagePageIdx_, kUsagePageSize, hasMore);
     // 定时刷新只比较实际显示的数据，未变化时不触碰窗口或无效区。
     bool rowsChanged = rows.size() != usageRows_.size() ||
         !std::equal(rows.begin(), rows.end(), usageRows_.begin(),
@@ -87,6 +88,9 @@ void WindowController::loadUsagePage(bool forcePaint) {
     usageHasMore_ = hasMore;
     usageTotalPages_ = totalPages;
     usageEmpty_ = total == 0;
+    const int maxScroll = std::max(0, static_cast<int>(usageRows_.size()) - usageVisibleRows(height));
+    usageScroll_ = std::clamp(usageScroll_, 0, maxScroll);
+    if (usageDragging_ && maxScroll == 0) SendMessageW(pageUsage_, WM_CANCELMODE, 0, 0);
     if (!pagerChanged) {
         RECT table{ 0, 0, s(pageUsage_, width), s(pageUsage_, pagerY(height)) };
         InvalidateRect(pageUsage_, forcePaint ? nullptr : &table, FALSE);
@@ -98,6 +102,14 @@ void WindowController::loadUsagePage(bool forcePaint) {
 
 void WindowController::layoutUsagePage() {
     loadUsagePage();
+}
+
+void WindowController::scrollUsageTo(int position) {
+    const int maxScroll = std::max(0, static_cast<int>(usageRows_.size()) - usageVisibleRows(logicalHeight(pageUsage_)));
+    const int next = std::clamp(position, 0, maxScroll);
+    if (next == usageScroll_) return;
+    usageScroll_ = next;
+    InvalidateRect(pageUsage_, nullptr, FALSE);
 }
 
 void WindowController::createUsageControls() {
