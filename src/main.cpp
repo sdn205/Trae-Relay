@@ -59,6 +59,8 @@ int main(int argc, char** argv) {
             MessageBoxA(nullptr, ("配置文件有误，已使用默认配置：\n" + err).c_str(), "Trae Relay", MB_ICONWARNING);
         }
     }
+    // 显式 --tray 或启动设置勾选时，首次启动直接进入托盘。
+    startTray = startTray || cfg.startMinimizedToTray;
     // 配置就绪：映射为 core 不可变快照并推送（此后 core 只读快照，不反向依赖 app 配置）
     settings::set(makeCoreSettings(cfg));
     if (cfg.singleInstance) {
@@ -102,7 +104,6 @@ int main(int argc, char** argv) {
         for (;;) Sleep(1000);
     }
 
-    // 普通双击始终显示主窗口；开机自启动由注册表命令显式传入 --tray。
     int rc = ui::runGui(startTray);
     if (mutex) CloseHandle(mutex);
     LOG_I("=== Trae Relay 退出 ===");
