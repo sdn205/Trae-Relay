@@ -19,20 +19,13 @@
     "trayClickAction": "show",
     "singleInstance": true
   },
-  "channel": {
-    "prefer": "remote",
-    "fallback": ["raw", "solo"],
-    "ideVersion": { "remote": "3.3.102", "raw": "3.3.102", "solo": "0.1.52" },
-    "ideVersionCode": { "remote": "20260912", "raw": "20260912", "solo": "20260811" }
-  },
   "defaults": {
     "reasoningEffort": null,
     "isMaxMode": 0,
     "maxContextWindow": null,
     "stream": false,
     "autoContinue": true,
-    "maxAutoContinue": 10,
-    "effortMode": "auto"
+    "maxAutoContinue": 10
   },
   "responses": {
     "enabled": true,
@@ -40,20 +33,9 @@
     "sessionCacheSize": 64,
     "sessionCachePersist": false
   },
-  "search": {
-    "mode": "auto",
-    "provider": "searxng",
-    "endpoint": "",
-    "apiKey": "",
-    "maxResults": 5,
-    "timeoutSec": 20,
-    "nativeAgentType": "search_agent",
-    "exposeAsTool": true,
-    "resultCharsPerItem": 2000
-  },
   "accounts": {
     "autoDiscover": true,
-    "checkin": { "enabled": true, "hour": 10 },
+    "checkin": { "enabled": true, "hour": 10, "minute": 0 },
     "pool": { "selectBy": "credits", "cooldownSec": 60, "disableAfterFails": 5 }
   },
   "logging": {
@@ -61,5 +43,6 @@
     "dir": "",
     "retainDays": 7,
     "redactSecrets": true
-  }
+  },
+  "models": {}
 }
