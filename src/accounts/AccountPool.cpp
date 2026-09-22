@@ -52,15 +52,11 @@ std::shared_ptr<Account> AccountPool::acquire(int timeoutMs) {
     int maxC = cfg->maxConcurrentPerAccount;
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (true) {
-        std::vector<std::shared_ptr<Account>> cands;
+        std::vector<std::shared_ptr<Account>> avail;
         {
             std::lock_guard<std::mutex> lk(m_mtx);
-            cands = m_accounts;
+            avail = m_accounts;
         }
-        // 过滤可用
-        std::vector<std::shared_ptr<Account>> avail;
-        for (auto& a : cands)
-            if (a->available()) avail.push_back(a);
         std::shared_ptr<Account> picked;
         if (!avail.empty()) {
             if (cfg->poolSelectBy == "roundRobin") {
@@ -97,36 +93,7 @@ std::shared_ptr<Account> AccountPool::acquire(int timeoutMs) {
 
 void AccountPool::release(std::shared_ptr<Account> acc, bool ok, int errorCode) {
     if (!acc) return;
-    if (ok) {
-        acc->failCount.store(0);
-    } else {
-        auto cfg = settings::get();
-        int fails = acc->failCount.fetch_add(1) + 1;
-        long long now = (long long)time(nullptr);
-        long long cd = 0;
-        switch (errorCode) {
-        case 0: break;
-        case 1001: cd = 0; break;             // 认证失败：刷新令牌处理，不冷却
-        case 1005: cd = 12 * 3600; break;     // 权益不足：长冷却 12h
-        case 4008: cd = 6 * 3600; break;      // 配额超限：等日重置（保守 6h）
-        case 4011: cd = cfg->poolCooldownSec; break; // 限流窗口
-        case 429:  cd = 60; break;            // 软限流
-        case 4001: cd = 0; break;             // 参数问题不冷却账号
-        default:
-            if (errorCode >= 500) cd = 15;    // 5xx 短冷却重试
-            else cd = cfg->poolCooldownSec;
-            break;
-        }
-        if (errorCode != 0 && cd == 0 && errorCode != 1001 && errorCode != 4001) cd = cfg->poolCooldownSec;
-        if (cd > 0) acc->cooldownUntil.store(now + cd);
-        if (fails >= cfg->poolDisableAfterFails && errorCode != 4001) {
-            acc->disabled.store(true);
-            acc->disabledAt.store(now);
-            LOG_W("账号 %s 连续失败 %d 次，已临时禁用（%llds 后自动恢复）",
-                  acc->nickname.c_str(), fails, Account::kDisabledRecoverSec);
-        }
-        if (errorCode != 0) LOG_W("账号 %s 请求失败 code=%d 冷却 %llds", acc->nickname.c_str(), errorCode, cd);
-    }
+    if (!ok) LOG_W("Account %s request failed code=%d", acc->nickname.c_str(), errorCode);
     acc->lastUsedTs.store((long long)time(nullptr));
     acc->releaseSlot();
 }

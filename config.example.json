@@ -36,7 +36,7 @@
   "accounts": {
     "autoDiscover": true,
     "checkin": { "enabled": true, "hour": 10, "minute": 0 },
-    "pool": { "selectBy": "credits", "cooldownSec": 60, "disableAfterFails": 5 }
+    "pool": { "selectBy": "credits" }
   },
   "logging": {
     "level": "info",

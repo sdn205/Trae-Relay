@@ -39,7 +39,6 @@ void WindowController::paintStatusPage(Canvas& dc, int width, int) {
     paintPanel(dc, acct.x, acct.y, acct.w, acct.h);
     paintGroupLabel(dc, 60, 94, L"当前账号");
     auto& pool = AccountPool::instance();
-    long long now = static_cast<long long>(time(nullptr));
     if (pool.accounts().empty()) {
         drawText(dc, L"未发现已登录的 Trae 账号",
                  { 60, 124, width - 120, 30 }, FMetric, C_TEXT,
@@ -64,12 +63,8 @@ void WindowController::paintStatusPage(Canvas& dc, int width, int) {
         paintGroupLabel(dc, creditsX, 164, L"积分");
         paintGroupLabel(dc, requestsX, 164, L"今日请求");
         paintGroupLabel(dc, tokensX, 164, L"今日 Token");
-        const wchar_t* stateText = account->disabled.load() ? L"已禁用"
-            : account->cooldownUntil.load() > now ? L"冷却中"
-            : account->active.load() > 0 ? L"请求中" : L"正常";
-        COLORREF stateColor = account->disabled.load() ? C_CORAL
-            : account->cooldownUntil.load() > now ? C_AMBER
-            : account->active.load() > 0 ? C_REQUEST : C_ACCENT;
+        const wchar_t* stateText = account->active.load() > 0 ? L"请求中" : L"正常";
+        COLORREF stateColor = account->active.load() > 0 ? C_REQUEST : C_ACCENT;
         dc.ellipse({62, 194, 8, 8}, stateColor);
         drawText(dc, stateText, { 78, 182, valueWidth - 18, 32 }, FBody, C_TEXT,
                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
@@ -223,13 +218,12 @@ void WindowController::refreshStatusPage(HWND) {
     enableControl(GetDlgItem(pageStatus_, IDC_BTN_CREDITS), hasAccount);
     enableControl(GetDlgItem(pageStatus_, IDC_BTN_CHECKIN),
                  hasAccount && !checkinRunning_.load());
-    // 比较账号卡真正显示的值；余额小数位、冷却状态及跨日请求数均纳入。
+    // 比较账号卡真正显示的值；余额小数位、请求状态及跨日请求数均纳入。
     CardState current;
     if (hasAccount) {
         const auto& account = AccountPool::instance().accounts().front();
         current.nickname = toWide(account->nickname);
-        current.state = account->disabled.load() ? 0 :
-            account->cooldownUntil.load() > time(nullptr) ? 1 : account->active.load() > 0 ? 2 : 3;
+        current.state = account->active.load() > 0 ? 2 : 3;
         double amount = account->credits.load();
         wchar_t amountText[64]{};
         if (amount >= 0) swprintf(amountText, 64, L"%.2f", amount);

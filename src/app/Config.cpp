@@ -114,11 +114,7 @@ void Config::applyJson(const Json& j) {
         const Json* po = ac->find("pool");
         if (po && po->isObject()) {
             poolSelectBy = po->get("selectBy", Json(poolSelectBy)).asString();
-            poolCooldownSec = (int)po->get("cooldownSec", Json(poolCooldownSec)).asInt(poolCooldownSec);
-            poolDisableAfterFails = (int)po->get("disableAfterFails", Json(poolDisableAfterFails)).asInt(poolDisableAfterFails);
             if (poolSelectBy != "credits" && poolSelectBy != "roundRobin") poolSelectBy = "credits";
-            if (poolCooldownSec < 5) poolCooldownSec = 5;
-            if (poolDisableAfterFails < 1) poolDisableAfterFails = 1;
         }
     }
     const Json* lg = j.find("logging");
@@ -270,9 +266,9 @@ Json Config::toJson() const {
     ci.set("minute", Json(checkinMinute));
     ac.set("checkin", ci);
     Json po = ac.find("pool") && ac.find("pool")->isObject() ? *ac.find("pool") : Json::object();
+    po.erase("cooldownSec");
+    po.erase("disableAfterFails");
     po.set("selectBy", Json(poolSelectBy));
-    po.set("cooldownSec", Json(poolCooldownSec));
-    po.set("disableAfterFails", Json(poolDisableAfterFails));
     ac.set("pool", po);
     j.set("accounts", ac);
 
@@ -369,8 +365,6 @@ std::shared_ptr<const CoreSettings> makeCoreSettings(const Config& cfg) {
     s->maxConcurrentPerAccount = cfg.maxConcurrentPerAccount;
     s->minRequestIntervalMs = cfg.minRequestIntervalMs;
     s->poolSelectBy = cfg.poolSelectBy;
-    s->poolCooldownSec = cfg.poolCooldownSec;
-    s->poolDisableAfterFails = cfg.poolDisableAfterFails;
     s->responsesEnabled = cfg.responsesEnabled;
     s->responsesMapReasoningSummary = cfg.responsesMapReasoningSummary;
     s->responsesSessionCacheSize = cfg.responsesSessionCacheSize;

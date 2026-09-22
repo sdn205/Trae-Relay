@@ -297,7 +297,7 @@ static void handleChatCompletions(const HttpRequest& req, HttpResponseWriter& w)
     if (!acc) {
         bool usable = AccountPool::instance().hasUsableAccount();
         sendJsonError(w, 503, "api_error",
-                      usable ? "账号并发繁忙，请稍后重试" : "无可用账号（全部冷却或未发现凭证）");
+                      usable ? "账号并发繁忙，请稍后重试" : "无可用账号（未发现凭证）");
         return;
     }
     LOG_D("chat: 账号已获取 %s", acc->nickname.c_str());
@@ -740,17 +740,12 @@ static void handleStatus(const HttpRequest& req, HttpResponseWriter& w) {
     st.set("isMaxMode", Json(cfg->defaultIsMaxMode));
     out.set("settings", st);
     Json accs = Json::array();
-    long long now = (long long)time(nullptr);
     for (auto& a : pool.accounts()) {
         Json o = Json::object();
         o.set("nickname", Json(a->nickname));
         o.set("edition", Json(a->editionId));
         o.set("credits", Json(a->credits.load()));
         o.set("active", Json(a->active.load()));
-        o.set("disabled", Json(a->disabled.load()));
-        long long cd = a->cooldownUntil.load() - now;
-        o.set("cooldownSec", Json(cd > 0 ? cd : 0));
-        o.set("failCount", Json(a->failCount.load()));
         o.set("lastUsed", Json(a->lastUsedTs.load()));
         accs.push_back(o);
     }

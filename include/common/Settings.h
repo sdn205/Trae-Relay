@@ -40,8 +40,6 @@ struct CoreSettings {
     int maxConcurrentPerAccount = 2;
     int minRequestIntervalMs = 0;
     std::string poolSelectBy = "credits";   // credits | roundRobin
-    int poolCooldownSec = 60;
-    int poolDisableAfterFails = 5;
     // ===== responses =====
     bool responsesEnabled = true;
     bool responsesMapReasoningSummary = true;

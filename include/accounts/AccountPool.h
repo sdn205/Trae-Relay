@@ -1,4 +1,4 @@
-// AccountPool.h - 多账号池：凭证、积分、冷却、并发闸门
+// AccountPool.h - 多账号池：凭证、积分、并发闸门
 #pragma once
 #include <atomic>
 #include <chrono>
@@ -22,35 +22,12 @@ struct Account {
     std::atomic<double> credits{ -1 };       // -1 = 未知
     std::atomic<int> payIdentity{ -1 };      // ide_user_pay_status.user_pay_identity：-1 未知，0=Free，>0 付费档
     std::atomic<int> active{ 0 };            // 当前并发会话数
-    std::atomic<long long> cooldownUntil{ 0 };
-    std::atomic<int> failCount{ 0 };
-    std::atomic<bool> disabled{ false };
-    std::atomic<long long> disabledAt{ 0 }; // 禁用时刻；超过恢复窗口自动解禁
     std::atomic<long long> lastUsedTs{ 0 };
     std::atomic<long long> lastRequestTs{ 0 };
     std::mutex refreshMtx;                   // 令牌刷新串行化
     std::mutex gateMtx;
     std::condition_variable gateCv;
 
-    // 连续失败导致的禁用不是永久状态：超过恢复窗口后自动重新参与调度，
-    // 避免单账号在一次限流风暴后永久 503（只能重启程序）。
-    static constexpr long long kDisabledRecoverSec = 300;
-
-    bool available() {
-        long long now = (long long)time(nullptr);
-        if (disabled.load()) {
-            long long at = disabledAt.load();
-            if (at > 0 && now - at >= kDisabledRecoverSec) {
-                disabled.store(false);
-                disabledAt.store(0);
-                failCount.store(0);
-                cooldownUntil.store(0);
-                return true;
-            }
-            return false;
-        }
-        return now >= cooldownUntil.load();
-    }
     bool tryAcquireSlot(int maxConcurrent) {
         std::unique_lock<std::mutex> lk(gateMtx);
         if (active.load() >= maxConcurrent) return false;
@@ -88,18 +65,15 @@ public:
     void autoDiscover();
     std::vector<std::shared_ptr<Account>>& accounts() { return m_accounts; }
 
-    // 是否存在当前可用（未禁用、未冷却）的账号；
-    // 用于区分“无凭证/全冷却”与“并发槽繁忙导致的排队超时”。
+    // Whether any account credentials were discovered.
     bool hasUsableAccount() {
         std::lock_guard<std::mutex> lk(m_mtx);
-        for (auto& a : m_accounts)
-            if (a->available()) return true;
-        return false;
+        return !m_accounts.empty();
     }
 
     // 按积分降序/轮询挑一个可用账号并占用并发槽（阻塞至多 timeoutMs）
     std::shared_ptr<Account> acquire(int timeoutMs);
-    // 释放槽位并按结果更新状态机（errorCode 0 = 成功）
+    // Release the slot and log request failures without suspending the account.
     void release(std::shared_ptr<Account> acc, bool ok, int errorCode);
 
     // 令牌刷新（过期前 30 分钟触发；串行化）；失败时不动旧 token

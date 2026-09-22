@@ -49,8 +49,6 @@ struct Config {
     int checkinHour = 10;
     int checkinMinute = 0;
     std::string poolSelectBy = "credits";   // credits | roundRobin
-    int poolCooldownSec = 60;
-    int poolDisableAfterFails = 5;
     // ===== logging =====
     std::string logLevel = "info";
     std::string logDir;                     // 空 = <exe目录>\logs
