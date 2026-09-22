@@ -81,7 +81,7 @@ private:
     struct CardState {
         std::wstring nickname, credits;
         int state = -1;
-        long long requests = 0;
+        std::wstring creditsConsumed;
         long long tokens = 0;
         bool operator==(const CardState&) const = default;
     };

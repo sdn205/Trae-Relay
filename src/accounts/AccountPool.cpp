@@ -631,6 +631,8 @@ void AccountPool::usageAppend(const UsageRecord& r) {
     if (r.ts >= m_usageTodayStart && r.ts < m_usageTodayEnd) {
         ++m_usageTodayCount;
         m_usageTodayTokens += r.in + r.out + r.cache;
+        if (r.creditsKnown && r.creditsDelta > 0)
+            m_usageTodayCreditsConsumed += r.creditsDelta;
     }
 }
 
@@ -640,7 +642,7 @@ int AccountPool::usageTotalCount() {
     return (int)m_usageCache.size();
 }
 
-long long AccountPool::usageCountToday(long long* tokens) {
+long long AccountPool::usageCountToday(long long* tokens, double* creditsConsumed) {
     std::lock_guard<std::mutex> lk(m_usageMtx);
     const time_t now = time(nullptr);
     struct tm local {};
@@ -658,6 +660,7 @@ long long AccountPool::usageCountToday(long long* tokens) {
         m_usageTodayEnd = end;
         m_usageTodayCount = 0;
         m_usageTodayTokens = 0;
+        m_usageTodayCreditsConsumed = 0;
         // 首次访问或跨日时逐行汇总当天文件，只保存计数，不保留所有记录对象。
         localtime_s(&local, &now);
         char day[16]{};
@@ -670,11 +673,14 @@ long long AccountPool::usageCountToday(long long* tokens) {
                 if (!usageParseLine(line, record) || record.ts < start || record.ts >= end) continue;
                 ++m_usageTodayCount;
                 m_usageTodayTokens += record.in + record.out + record.cache;
+                if (record.creditsKnown && record.creditsDelta > 0)
+                    m_usageTodayCreditsConsumed += record.creditsDelta;
             }
             fclose(file);
         }
     }
     if (tokens) *tokens = m_usageTodayTokens;
+    if (creditsConsumed) *creditsConsumed = m_usageTodayCreditsConsumed;
     return m_usageTodayCount;
 }
 

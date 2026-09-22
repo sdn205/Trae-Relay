@@ -5,7 +5,7 @@
 namespace stats {
 TodayUsage usageToday() {
     TodayUsage result;
-    result.requests = AccountPool::instance().usageCountToday(&result.tokens);
+    result.requests = AccountPool::instance().usageCountToday(&result.tokens, &result.creditsConsumed);
     return result;
 }
 long long requestCountToday() {

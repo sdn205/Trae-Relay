@@ -7,6 +7,12 @@ namespace ui {
 using namespace visual;
 
 namespace {
+std::wstring formatCreditsConsumed(double credits) {
+    wchar_t text[64]{};
+    swprintf(text, 64, L"%.2f", credits);
+    return text;
+}
+
 std::wstring formatTokens(long long tokens) {
     double value = static_cast<double>(tokens);
     const wchar_t* units[] = { L"", L"K", L"M", L"B" };
@@ -34,7 +40,7 @@ void updateApiKeyControls(HWND page, bool allowAny) {
 void WindowController::paintStatusPage(Canvas& dc, int width, int) {
     paintPageHeader(dc, width, L"运行总览");
 
-    // —— 当前账号：状态 / 积分 / 今日请求 四列读数 ——
+    // —— 当前账号：状态 / 积分 / 今日 Token / 今日积分消耗 ——
     R acct = accountCard(width);
     paintPanel(dc, acct.x, acct.y, acct.w, acct.h);
     paintGroupLabel(dc, 60, 94, L"当前账号");
@@ -56,13 +62,13 @@ void WindowController::paintStatusPage(Canvas& dc, int width, int) {
         const int columnWidth = (width - 120) / 4;
         const int valueWidth = columnWidth - 20;
         const int creditsX = 60 + columnWidth;
-        const int requestsX = 60 + columnWidth * 2;
-        const int tokensX = 60 + columnWidth * 3;
+        const int tokensX = 60 + columnWidth * 2;
+        const int consumedX = 60 + columnWidth * 3;
         const auto today = stats::usageToday();
         paintGroupLabel(dc, 60, 164, L"状态");
         paintGroupLabel(dc, creditsX, 164, L"积分");
-        paintGroupLabel(dc, requestsX, 164, L"今日请求");
         paintGroupLabel(dc, tokensX, 164, L"今日 Token");
+        paintGroupLabel(dc, consumedX, 164, L"今日积分消耗");
         const bool queued = account->queued.load() > 0;
         const bool active = account->active.load() > 0;
         const wchar_t* stateText = queued ? L"排队中" : active ? L"请求中" : L"正常";
@@ -79,11 +85,11 @@ void WindowController::paintStatusPage(Canvas& dc, int width, int) {
         }
         drawText(dc, credits, { creditsX, 180, valueWidth, 32 }, FMetricSemibold, C_TEXT,
                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-        drawText(dc, std::to_wstring(today.requests),
-                 { requestsX, 180, valueWidth, 32 }, FMetricSemibold, C_TEXT,
-                 DT_LEFT | DT_SINGLELINE | DT_VCENTER);
         drawText(dc, formatTokens(today.tokens),
                  { tokensX, 180, valueWidth, 32 }, FMetricSemibold, C_TEXT,
+                 DT_LEFT | DT_SINGLELINE | DT_VCENTER);
+        drawText(dc, formatCreditsConsumed(today.creditsConsumed),
+                 { consumedX, 180, valueWidth, 32 }, FMetricSemibold, C_TEXT,
                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
     }
 
@@ -231,7 +237,7 @@ void WindowController::refreshStatusPage(HWND) {
         if (amount >= 0) swprintf(amountText, 64, L"%.2f", amount);
         current.credits = amount >= 0 ? amountText : L"--";
         const auto today = stats::usageToday();
-        current.requests = today.requests;
+        current.creditsConsumed = formatCreditsConsumed(today.creditsConsumed);
         current.tokens = today.tokens;
     }
     bool changed = previousCardWindow_ != pageStatus_ || current != previousCard_;

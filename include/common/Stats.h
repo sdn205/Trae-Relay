@@ -4,6 +4,7 @@ namespace stats {
 struct TodayUsage {
     long long requests = 0;
     long long tokens = 0;
+    double creditsConsumed = 0;
 };
 TodayUsage usageToday();
 long long requestCountToday();

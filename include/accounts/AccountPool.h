@@ -105,7 +105,7 @@ public:
     // 已加载记录数（最多 100，分页器算总页数用）。
     int usageTotalCount();
     // 今日汇总独立于分页缓存，包含当天全部已落账记录。
-    long long usageCountToday(long long* tokens = nullptr);
+    long long usageCountToday(long long* tokens = nullptr, double* creditsConsumed = nullptr);
     // 退出时把未落账的记录写盘（积分未知口径），防丢条目。
     void usageFlushPending();
     // 每日签到：0=领取成功，1=今日已领取，-1=失败
@@ -131,6 +131,7 @@ private:
     bool m_usageCacheLoaded = false;
     time_t m_usageTodayStart = 0, m_usageTodayEnd = 0;
     long long m_usageTodayCount = 0, m_usageTodayTokens = 0;
+    double m_usageTodayCreditsConsumed = 0;
     void usageEnsureCacheLocked();               // 调用方须持有 m_usageMtx
     void usageAppend(const UsageRecord& r);      // 写盘 + 插入缓存头
     struct UsagePending {
