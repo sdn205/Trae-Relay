@@ -4,7 +4,8 @@
 
 enum class LogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4 };
 
-void logInit(const std::string& dir, LogLevel level, int retainDays);
+void logInit(const std::string& dir, LogLevel level, int retainDays, bool enabled = true);
+void logSetEnabled(bool enabled);
 void logSetLevel(LogLevel level);
 LogLevel logLevel();
 bool logEnabled(LogLevel lv);

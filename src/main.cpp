@@ -7,6 +7,7 @@
 #include "common/Log.h"
 #include "common/Settings.h"
 #include "accounts/Storage.h"
+#include "upstream/ModelCatalog.h"
 #include "Version.h"
 #include <windows.h>
 #include <cstdio>
@@ -43,7 +44,7 @@ int main(int argc, char** argv) {
                       : snapCfg.logLevel == "debug" ? LogLevel::Debug
                       : snapCfg.logLevel == "warn" ? LogLevel::Warn
                       : snapCfg.logLevel == "error" ? LogLevel::Error : LogLevel::Info;
-        logInit(logDir, lv, snapCfg.logRetainDays);
+        logInit(logDir, lv, snapCfg.logRetainDays, snapCfg.loggingEnabled);
         if (snapCfg.accountsAutoDiscover) AccountPool::instance().autoDiscover();
         return ui::runSnapshot(snapshotDir);
     }
@@ -83,12 +84,13 @@ int main(int argc, char** argv) {
     LogLevel lv = cfg.logLevel == "trace" ? LogLevel::Trace : cfg.logLevel == "debug" ? LogLevel::Debug
                   : cfg.logLevel == "warn" ? LogLevel::Warn : cfg.logLevel == "error" ? LogLevel::Error
                                                                                       : LogLevel::Info;
-    logInit(logDir, lv, cfg.logRetainDays);
+    logInit(logDir, lv, cfg.logRetainDays, cfg.loggingEnabled);
     LOG_I("=== Trae Relay 启动（pid=%lu，tray=%d，serve=%d）===", GetCurrentProcessId(), startTray, serveHeadless);
     LOG_I("生效版本头: %s / %s", cfg.ideVersion.c_str(), cfg.ideVersionCode.c_str());
 
     // 账号发现
     if (cfg.accountsAutoDiscover) AccountPool::instance().autoDiscover();
+    ModelCatalog::instance().start();
 
     if (serveHeadless) {
         // 无 UI 模式：直接起服务（供测试/服务化）
@@ -105,6 +107,7 @@ int main(int argc, char** argv) {
     }
 
     int rc = ui::runGui(startTray);
+    ModelCatalog::instance().stop();
     if (mutex) CloseHandle(mutex);
     LOG_I("=== Trae Relay 退出 ===");
     return rc;

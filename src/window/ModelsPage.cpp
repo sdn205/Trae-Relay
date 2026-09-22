@@ -73,7 +73,6 @@ bool WindowController::refreshModelSettings(HWND) {
             setControlText(GetDlgItem(pageStatus_, IDC_ST_MODELHINT), L"模型目录加载中…");
             enableControl(GetDlgItem(pageStatus_, IDC_CHK_MAX), false);
         }
-        if (!snapshotMode_ && !AccountPool::instance().accounts().empty()) catalog.triggerRefreshAsync();
         return false;
     }
     std::string current = selectedModelName();

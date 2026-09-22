@@ -210,6 +210,7 @@ UpResult upstreamSolo(const UpRequest& req, Account& acc, const ModelCaps& caps,
 
 // 固定走 solo 通道；401/1001 时刷新令牌重试一次
 UpResult upstreamDispatch(const UpRequest& req, Account& acc, const ModelCaps& caps, const UpSink& sink);
+void logRequestFailure(const char* endpoint, const std::string& model, const Account& acc, const UpResult& result);
 
 // 档位白名单校验 + clamp（不合法 → 不生效，返回 ""）
 std::string clampEffort(const ModelCaps& caps, const std::string& want);

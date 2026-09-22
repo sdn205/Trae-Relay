@@ -9,8 +9,6 @@
 #include <ctime>
 #include <thread>
 
-static long long nowSec() { return (long long)time(nullptr); }
-
 static std::string jstr(const Json& j, std::initializer_list<const char*> keys, const std::string& def = "") {
     for (auto k : keys) {
         const Json* v = j.find(k);
@@ -369,18 +367,11 @@ static void mergeCaps(ModelCaps& dst, const ModelCaps& src) {
     if (dst.offPeakWindows.empty() && !src.offPeakWindows.empty()) dst.offPeakWindows = src.offPeakWindows;
 }
 
-std::vector<ModelCaps> ModelCatalog::all(Account& acc, std::string& err) {
-    // stale-while-revalidate：UI/请求线程绝不为目录刷新阻塞数十秒
-    if (m_everOk.load() && nowSec() - m_cachedAt.load() < 300)
-        return cached();
-    if (m_everOk.load()) {
-        triggerRefreshAsync(); // 旧缓存立即返回，后台至多一个线程刷新
-        std::lock_guard<std::mutex> lk(m_mtx);
-        err = m_cacheErr;
-        return m_cache;
-    }
-    if (!refreshOnce(acc, err)) return {};
-    return cached();
+std::vector<ModelCaps> ModelCatalog::all(Account&, std::string& err) {
+    std::unique_lock<std::mutex> lk(m_mtx);
+    m_wake.wait(lk, [this] { return m_attempted; });
+    err = m_cacheErr;
+    return m_cache;
 }
 
 bool ModelCatalog::refreshOnce(Account& acc, std::string& err) {
@@ -391,6 +382,7 @@ bool ModelCatalog::refreshOnce(Account& acc, std::string& err) {
     // 同时携带 reasoning_effort_config / max_mode / __max 档案信息。
     std::vector<std::string> primaryVisibleNames;
     bool primaryCatalogOk = false;
+    bool allCatalogsOk = true;
     http::Headers hd = ideHeaders(acc, cfg->ideVersion, cfg->ideVersionCode, false);
     auto loadDetailCatalog = [&](const char* functionName) {
         Json body = Json::object();
@@ -404,19 +396,27 @@ bool ModelCatalog::refreshOnce(Account& acc, std::string& err) {
         auto resp = http::send("POST", "https://trae-api-cn.mchost.guru/api/ide/v1/get_detail_param",
                                 hd, body.dump(), 30000);
         if (!resp.ok()) {
+            allCatalogsOk = false;
+            err = std::string(functionName) + " HTTP " + std::to_string(resp.status) + ": " + resp.error;
             LOG_W("get_detail_param(%s) 拉取失败: HTTP %d err=%s body=%s", functionName,
                   resp.status, resp.error.c_str(), resp.body.substr(0, 200).c_str());
             return;
         }
         Json j;
         if (!Json::parse(resp.body, j)) {
+            allCatalogsOk = false;
+            err = std::string(functionName) + " 响应不是合法 JSON";
             LOG_W("get_detail_param(%s) 响应不是合法 JSON", functionName);
             return;
         }
         const Json* data = j.find("data");
         const Json& root = data && data->isObject() ? *data : j;
         const Json* cil = root.find("config_info_list");
-        if (!cil || !cil->isArray()) return;
+        if (!cil || !cil->isArray()) {
+            allCatalogsOk = false;
+            err = std::string(functionName) + " 响应缺少模型列表";
+            return;
+        }
         const bool primaryCatalog = _stricmp(functionName, "chat_v3") == 0 ||
                                     _stricmp(functionName, "solo_agent") == 0;
         if (primaryCatalog) primaryCatalogOk = true;
@@ -483,6 +483,7 @@ bool ModelCatalog::refreshOnce(Account& acc, std::string& err) {
     // Trae 当前模型选择器把 chat_v3 / solo_agent 映射成用户可选的主模型目录。
     loadDetailCatalog("chat_v3");
     loadDetailCatalog("solo_agent");
+    if (!allCatalogsOk) return false;
 
     // 按主目录收敛，避免把其他功能目录的专用/已下线模型暴露给客户端。
     if (primaryCatalogOk && !primaryVisibleNames.empty()) {
@@ -507,7 +508,6 @@ bool ModelCatalog::refreshOnce(Account& acc, std::string& err) {
         m_cache = std::move(merged);
         m_cacheErr.clear();
     }
-    m_cachedAt.store(nowSec());
     m_everOk.store(true);
     m_version.fetch_add(1);
     LOG_I("模型表已刷新：%d 个模型", modelCount);
@@ -519,25 +519,34 @@ std::vector<ModelCaps> ModelCatalog::cached() const {
     return m_cache;
 }
 
-void ModelCatalog::triggerRefreshAsync() {
-    bool expected = false;
-    if (!m_refreshing.compare_exchange_strong(expected, true)) return; // 至多一个后台刷新
-    std::thread([this]() {
-        struct Guard {
-            ModelCatalog* self;
-            ~Guard() { self->m_refreshing.store(false); }
-        } guard{ this };
-        std::string err;
-        auto acc = AccountPool::instance().acquire(20000);
-        if (!acc) {
-            LOG_W("模型表后台刷新：无可用账号");
-            return;
+void ModelCatalog::start() {
+    if (m_worker.joinable()) return;
+    m_worker = std::jthread([this](std::stop_token stop) {
+        while (!stop.stop_requested()) {
+            std::string err;
+            bool ok = false;
+            auto& pool = AccountPool::instance();
+            // 元数据请求不占聊天并发槽，避免首个聊天等待目录时互相阻塞。
+            if (pool.accounts().empty()) {
+                err = "未发现可用账号";
+            } else {
+                auto acc = pool.accounts().front();
+                pool.ensureFreshToken(*acc);
+                ok = refreshOnce(*acc, err);
+            }
+            if (!ok) LOG_W("模型表刷新失败：%s；5 分钟后重试", err.c_str());
+            std::unique_lock<std::mutex> lk(m_mtx);
+            m_cacheErr = err;
+            m_attempted = true;
+            m_wake.notify_all();
+            m_wake.wait_for(lk, stop, std::chrono::seconds(ok ? 3600 : 300), [] { return false; });
         }
-        AccountPool::instance().ensureFreshToken(*acc);
-        if (!refreshOnce(*acc, err))
-            LOG_W("模型表后台刷新失败：%s", err.c_str());
-        AccountPool::instance().release(acc, true, 0);
-    }).detach();
+    });
+}
+
+void ModelCatalog::stop() {
+    m_worker.request_stop();
+    if (m_worker.joinable()) m_worker.join();
 }
 
 bool ModelCatalog::get(Account& acc, const std::string& configName, ModelCaps& out, std::string& err) {

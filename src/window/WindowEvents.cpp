@@ -117,7 +117,6 @@ LRESULT WindowController::handleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         }
         // 模型目录后台刷新（SWR，不阻塞窗口创建）
         if (!AccountPool::instance().accounts().empty()) {
-            ModelCatalog::instance().triggerRefreshAsync();
             startupWorker_ = std::jthread([](std::stop_token stop) {
                 auto& pool = AccountPool::instance();
                 auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
@@ -283,8 +282,6 @@ LRESULT WindowController::handleMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             InvalidateRect(GetDlgItem(pageHwnd(def->page), id), nullptr, FALSE);
             if (id == IDC_CHK_MAX) applyModelSettings(hwnd);
             else applySettingsInstant(hwnd);
-        } else if (id == IDC_CB_LOGLEVEL && code == CBN_SELCHANGE) {
-            applySettingsInstant(hwnd);
         } else if (def && def->kind == Ck::Edit && def->page == PAGE_SETTINGS &&
                    code == EN_KILLFOCUS) {
             applySettingsInstant(hwnd);

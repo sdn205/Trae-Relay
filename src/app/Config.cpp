@@ -119,6 +119,7 @@ void Config::applyJson(const Json& j) {
     }
     const Json* lg = j.find("logging");
     if (lg && lg->isObject()) {
+        loggingEnabled = lg->get("enabled", Json(loggingEnabled)).asBool(loggingEnabled);
         logLevel = lg->get("level", Json(logLevel)).asString();
         logDir = lg->get("dir", Json(logDir)).asString();
         logRetainDays = (int)lg->get("retainDays", Json(logRetainDays)).asInt(logRetainDays);
@@ -274,6 +275,7 @@ Json Config::toJson() const {
 
     Json lg = j.find("logging") && j.find("logging")->isObject() ? *j.find("logging") : Json::object();
     lg.set("level", Json(logLevel));
+    lg.set("enabled", Json(loggingEnabled));
     lg.set("dir", Json(logDir));
     lg.set("retainDays", Json(logRetainDays));
     lg.set("redactSecrets", Json(logRedactSecrets));

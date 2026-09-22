@@ -40,7 +40,6 @@ R modelComboBox(int width);
 R portBox(int = 0);
 R hourBox(int = 0);
 R minuteBox(int = 0);
-R logLevelBox(int = 0);
 
 
 } // namespace ui::visual

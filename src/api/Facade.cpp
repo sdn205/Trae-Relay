@@ -610,6 +610,7 @@ static void handleChatCompletions(const HttpRequest& req, HttpResponseWriter& w)
 
     if (!r.ok && !r.clientAborted) {
         // 上游失败
+        logRequestFailure("chat/completions", caps.configName, *acc, r);
         int httpErr = 502;
         std::string type = "api_error";
         upstreamErrorType(r, httpErr, type);

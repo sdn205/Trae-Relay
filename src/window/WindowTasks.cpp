@@ -63,9 +63,6 @@ void WindowController::tickSecond(HWND hwnd) {
     // 使用记录页：每 2s 重读当前分页，积分落账后行内数字自动出现
     if (visible && activePage_ == PAGE_USAGE && pageUsage_ && (tick % 2 == 0))
         loadUsagePage(false);
-    // 目录从未就绪时每 5 秒再试一次后台刷新
-    if (!ModelCatalog::instance().ready() && (tick % 5 == 0) && !AccountPool::instance().accounts().empty())
-        ModelCatalog::instance().triggerRefreshAsync();
     tickAutoCheckin(hwnd);
 }
 

@@ -37,7 +37,7 @@ inline constexpr int IDC_CHK_STARTMIN = 1303;
 inline constexpr int IDC_CHK_MINCLOSE = 1304;
 inline constexpr int IDC_CHK_CHECKIN = 1306;
 inline constexpr int IDC_ED_HOUR = 1307;
-inline constexpr int IDC_CB_LOGLEVEL = 1308;
+inline constexpr int IDC_CHK_LOGGING = 1308;
 inline constexpr int IDC_ED_MINUTE = 1311;
 enum PageIndex { PAGE_STATUS = 0, PAGE_USAGE, PAGE_SETTINGS };
 

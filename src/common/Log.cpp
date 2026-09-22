@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdarg>
 #include <mutex>
+#include <atomic>
 #include <string>
 #include <sys/stat.h>
 
@@ -11,7 +12,8 @@ namespace {
 struct LogState {
     std::mutex mtx;
     std::string dir;
-    LogLevel level = LogLevel::Info;
+    std::atomic<LogLevel> level{LogLevel::Info};
+    std::atomic<bool> enabled{false};
     int retainDays = 7;
     std::string curDate;
     FILE* fp = nullptr;
@@ -78,13 +80,8 @@ void pruneOldLocked() {
     } while (FindNextFileW(h, &fd));
     FindClose(h);
 }
-} // namespace
-
-void logInit(const std::string& dir, LogLevel level, int retainDays) {
-    std::lock_guard<std::mutex> lk(g.mtx);
-    g.dir = dir;
-    g.level = level;
-    g.retainDays = retainDays;
+void prepareOutputLocked() {
+    const auto& dir = g.dir;
     if (!dir.empty()) {
         // 多级目录创建（宽字符，兼容中文路径）
         std::string cur;
@@ -102,11 +99,30 @@ void logInit(const std::string& dir, LogLevel level, int retainDays) {
     openFileLocked();
     pruneOldLocked();
 }
+} // namespace
+
+void logInit(const std::string& dir, LogLevel level, int retainDays, bool enabled) {
+    std::lock_guard<std::mutex> lk(g.mtx);
+    if (g.fp) { fclose(g.fp); g.fp = nullptr; }
+    g.dir = dir;
+    g.level = level;
+    g.retainDays = retainDays;
+    g.enabled = enabled;
+    if (enabled) prepareOutputLocked();
+}
+void logSetEnabled(bool enabled) {
+    std::lock_guard<std::mutex> lk(g.mtx);
+    if (g.enabled.load() == enabled) return;
+    g.enabled = enabled;
+    if (enabled) prepareOutputLocked();
+    else if (g.fp) { fclose(g.fp); g.fp = nullptr; }
+}
 void logSetLevel(LogLevel lv) { std::lock_guard<std::mutex> lk(g.mtx); g.level = lv; }
-LogLevel logLevel() { return g.level; }
-bool logEnabled(LogLevel lv) { return lv >= g.level; }
+LogLevel logLevel() { return g.level.load(); }
+bool logEnabled(LogLevel lv) { return g.enabled.load() && lv >= g.level.load(); }
 
 void logWrite(LogLevel lv, const char* fmt, ...) {
+    if (!logEnabled(lv)) return;
     SYSTEMTIME st;
     GetLocalTime(&st);
     char head[64];
@@ -122,6 +138,7 @@ void logWrite(LogLevel lv, const char* fmt, ...) {
     if (n && body[n - 1] != '\n') strcat_s(body, "\n");
 
     std::lock_guard<std::mutex> lk(g.mtx);
+    if (!logEnabled(lv)) return;
     if (g.fp) {
         std::string date = todayStr();
         if (date != g.curDate) openFileLocked();

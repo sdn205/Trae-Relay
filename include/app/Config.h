@@ -51,6 +51,7 @@ struct Config {
     std::string poolSelectBy = "credits";   // credits | roundRobin
     // ===== logging =====
     std::string logLevel = "info";
+    bool loggingEnabled = true;
     std::string logDir;                     // 空 = <exe目录>\logs
     int logRetainDays = 7;
     bool logRedactSecrets = true;

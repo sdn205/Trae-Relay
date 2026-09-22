@@ -174,6 +174,15 @@ bool snapshotDelta(std::string& last, const std::string& snap, std::string& delt
 }
 
 // ---------- 通道调度 ----------
+void logRequestFailure(const char* endpoint, const std::string& model, const Account& acc, const UpResult& r) {
+    if (r.ok || r.clientAborted) return;
+    std::string reason = r.error.empty() ? "上游未提供错误原因" : r.error;
+    reason.resize(utf8SafeCut(reason, 500));
+    for (char& ch : reason) if (ch == '\r' || ch == '\n' || ch == '\t') ch = ' ';
+    LOG_W("请求失败 [%s] 模型=%s 账号=%s HTTP=%d code=%d 原因=%s",
+          endpoint, model.c_str(), acc.nickname.c_str(), r.httpStatus, r.code, reason.c_str());
+}
+
 // 固定使用 SOLO 通道（/api/agent/v3/llm_utils_chat，chat_v3 主目录模型；
 // 原生 function calling、思考档位前缀注入、Max/1M 上下文均在该通道实现）。
 UpResult upstreamDispatch(const UpRequest& req, Account& acc, const ModelCaps& caps, const UpSink& sink) {

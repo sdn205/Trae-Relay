@@ -93,7 +93,7 @@ std::shared_ptr<Account> AccountPool::acquire(int timeoutMs) {
 
 void AccountPool::release(std::shared_ptr<Account> acc, bool ok, int errorCode) {
     if (!acc) return;
-    if (!ok) LOG_W("Account %s request failed code=%d", acc->nickname.c_str(), errorCode);
+    if (!ok) LOG_D("Account %s request failed code=%d", acc->nickname.c_str(), errorCode);
     acc->lastUsedTs.store((long long)time(nullptr));
     acc->releaseSlot();
 }

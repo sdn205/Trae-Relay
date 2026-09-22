@@ -61,6 +61,19 @@ static std::wstring toWide(const std::string& s) {
 }
 
 // ---------- 共享请求执行 ----------
+static std::string networkError(const char* stage, DWORD code) {
+    const char* reason = "网络请求失败";
+    switch (code) {
+    case ERROR_WINHTTP_TIMEOUT: reason = "等待超时"; break;
+    case ERROR_WINHTTP_NAME_NOT_RESOLVED: reason = "域名解析失败"; break;
+    case ERROR_WINHTTP_CANNOT_CONNECT: reason = "无法连接上游"; break;
+    case ERROR_WINHTTP_CONNECTION_ERROR: reason = "连接中断或协议错误"; break;
+    case ERROR_WINHTTP_SECURE_FAILURE: reason = "TLS 证书或安全连接失败"; break;
+    case ERROR_WINHTTP_OPERATION_CANCELLED: reason = "请求已取消"; break;
+    }
+    return std::string(stage) + "：" + reason + "（WinHTTP " + std::to_string(code) + "）";
+}
+
 struct WinHttpCtx {
     HINTERNET hSession = nullptr, hConnect = nullptr, hRequest = nullptr;
     int status = 0;
@@ -89,15 +102,15 @@ struct WinHttpCtx {
         }
         hSession = WinHttpOpen(L"TraeRelay/" TRAERELAY_VERSION_W, WINHTTP_ACCESS_TYPE_NO_PROXY,
                                WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-        if (!hSession) { err = "WinHttpOpen 失败: " + std::to_string(GetLastError()); return false; }
+        if (!hSession) { err = networkError("初始化", GetLastError()); return false; }
         WinHttpSetTimeouts(hSession, 15000, 15000, 30000, 60000);
         hConnect = WinHttpConnect(hSession, toWide(host).c_str(), (INTERNET_PORT)port, 0);
-        if (!hConnect) { err = "连接失败: " + std::to_string(GetLastError()); return false; }
+        if (!hConnect) { err = networkError("建立连接", GetLastError()); return false; }
         DWORD flags = scheme == "https" ? WINHTTP_FLAG_SECURE : 0;
         hRequest = WinHttpOpenRequest(hConnect, toWide(method).c_str(), toWide(path).c_str(),
                                       nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
                                       flags);
-        if (!hRequest) { err = "OpenRequest 失败: " + std::to_string(GetLastError()); return false; }
+        if (!hRequest) { err = networkError("创建请求", GetLastError()); return false; }
         (void)connectTimeoutMs;
         // 请求头
         std::string hd;
@@ -113,11 +126,11 @@ struct WinHttpCtx {
         if (!WinHttpSendRequest(hRequest, hd.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : whd.c_str(),
                                 (DWORD)hd.size(), (LPVOID)(body.empty() ? nullptr : body.data()),
                                 (DWORD)body.size(), (DWORD)body.size(), 0)) {
-            err = "发送失败: " + std::to_string(GetLastError());
+            err = networkError("发送请求", GetLastError());
             return false;
         }
         if (!WinHttpReceiveResponse(hRequest, nullptr)) {
-            err = "接收响应失败: " + std::to_string(GetLastError());
+            err = networkError("等待响应头", GetLastError());
             return false;
         }
         // 状态码
@@ -168,7 +181,7 @@ struct WinHttpCtx {
         if (eof) return false;
         DWORD avail = 0;
         if (!WinHttpQueryDataAvailable(hRequest, &avail)) {
-            err = "查询数据失败: " + std::to_string(GetLastError());
+            err = networkError("等待流数据", GetLastError());
             eof = true;
             return false;
         }
@@ -179,7 +192,7 @@ struct WinHttpCtx {
         std::vector<char> tmp(avail);
         DWORD rd = 0;
         if (!WinHttpReadData(hRequest, tmp.data(), avail, &rd)) {
-            err = "读取失败: " + std::to_string(GetLastError());
+            err = networkError("读取流数据", GetLastError());
             eof = true;
             return false;
         }
@@ -272,7 +285,9 @@ bool Stream::readLine(std::string& line) {
     if (!impl) return false;
     auto* p = (StreamImpl*)impl;
     if (!p->ctx) return false;
-    return p->ctx->readLine(line);
+    bool ok = p->ctx->readLine(line);
+    if (!ok) error = p->ctx->err;
+    return ok;
 }
 
 void Stream::close() {

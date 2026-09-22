@@ -35,9 +35,6 @@ void WindowController::paintSettingsPage(Canvas& dc, int width, int) {
     drawDivider(dc, 60, 452, width - 60);
     // —— 日志 ——
     paintGroupLabel(dc, 60, 468, L"日志");
-    drawText(dc, L"日志级别", { 60, 500, 180, 32 }, FBody, C_TEXT,
-             DT_LEFT | DT_SINGLELINE | DT_VCENTER);
-    paintField(dc, pageSettings_, IDC_CB_LOGLEVEL);
 }
 
 void WindowController::layoutSettingsPage() {
@@ -50,7 +47,7 @@ void WindowController::layoutSettingsPage() {
     place(pageSettings_, GetDlgItem(pageSettings_, IDC_CHK_CHECKIN), { 60, 403, 240, 32 });
     placeField(pageSettings_, IDC_ED_HOUR);
     placeField(pageSettings_, IDC_ED_MINUTE);
-    placeField(pageSettings_, IDC_CB_LOGLEVEL);
+    place(pageSettings_, GetDlgItem(pageSettings_, IDC_CHK_LOGGING), { 60, 500, 220, 32 });
 }
 
 void WindowController::createSettingsControls() {
@@ -68,11 +65,8 @@ void WindowController::createSettingsControls() {
                 IDC_CHK_CHECKIN);
     makeControl(pageSettings_, L"", WS_VISIBLE | ES_NUMBER, IDC_ED_HOUR);
     makeControl(pageSettings_, L"", WS_VISIBLE | ES_NUMBER, IDC_ED_MINUTE);
-    makeControl(pageSettings_, L"",
-                WS_VISIBLE | CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS,
-                IDC_CB_LOGLEVEL);
-    for (const wchar_t* level : { L"trace", L"debug", L"info", L"warn", L"error" })
-        ComboBox_AddString(GetDlgItem(pageSettings_, IDC_CB_LOGLEVEL), level);
+    makeControl(pageSettings_, L"开启日志", WS_VISIBLE | BS_OWNERDRAW | BS_NOTIFY,
+                IDC_CHK_LOGGING);
     wchar_t value[64]{};
     swprintf(value, 64, L"%d", cfg.servicePort);
     setControlText(GetDlgItem(pageSettings_, IDC_ED_PORT), value);
@@ -85,9 +79,7 @@ void WindowController::createSettingsControls() {
     setControlText(GetDlgItem(pageSettings_, IDC_ED_HOUR), value);
     swprintf(value, 64, L"%02d", cfg.checkinMinute);
     setControlText(GetDlgItem(pageSettings_, IDC_ED_MINUTE), value);
-    int level = cfg.logLevel == "trace" ? 0 : cfg.logLevel == "debug" ? 1
-                  : cfg.logLevel == "warn" ? 3 : cfg.logLevel == "error" ? 4 : 2;
-    ComboBox_SetCurSel(GetDlgItem(pageSettings_, IDC_CB_LOGLEVEL), level);
+    setChecked(IDC_CHK_LOGGING, cfg.loggingEnabled);
 }
 
 void WindowController::applySettingsInstant(HWND hwnd) {
@@ -125,9 +117,8 @@ void WindowController::applySettingsInstant(HWND hwnd) {
     cfg.checkinEnabled = isChecked(IDC_CHK_CHECKIN);
     cfg.checkinHour = hour;
     cfg.checkinMinute = minute;
-    int level = ComboBox_GetCurSel(GetDlgItem(pageSettings_, IDC_CB_LOGLEVEL));
-    cfg.logLevel = level == 0 ? "trace" : level == 1 ? "debug" : level == 3 ? "warn"
-                                                          : level == 4 ? "error" : "info";
+    const bool previousLoggingEnabled = cfg.loggingEnabled;
+    cfg.loggingEnabled = isChecked(IDC_CHK_LOGGING);
     bool wantAutostart = isChecked(IDC_CHK_AUTOSTART);
     std::string error;
     if (wantAutostart != autostart::isEnabled()) {
@@ -136,16 +127,13 @@ void WindowController::applySettingsInstant(HWND hwnd) {
     }
     cfg.autoStart = autostart::isEnabled();
     if (!cfg.save(error)) {
+        cfg.loggingEnabled = previousLoggingEnabled;
+        setChecked(IDC_CHK_LOGGING, previousLoggingEnabled);
+        InvalidateRect(GetDlgItem(pageSettings_, IDC_CHK_LOGGING), nullptr, FALSE);
         MessageBoxA(hwnd, error.c_str(), "保存失败", MB_ICONERROR);
         return;
     }
-    // 配置落盘后同步更新当前进程的日志过滤器，使日志级别立即生效。
-    LogLevel runtimeLogLevel = cfg.logLevel == "trace" ? LogLevel::Trace
-                             : cfg.logLevel == "debug" ? LogLevel::Debug
-                             : cfg.logLevel == "warn" ? LogLevel::Warn
-                             : cfg.logLevel == "error" ? LogLevel::Error
-                             : LogLevel::Info;
-    logSetLevel(runtimeLogLevel);
+    logSetEnabled(cfg.loggingEnabled);
     // 配置已变：重推 core 设置快照（端口变化随后重启服务，其余字段热生效）
     settings::set(makeCoreSettings(cfg));
     if (listenerChanged && service::running()) {

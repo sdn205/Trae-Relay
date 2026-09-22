@@ -829,6 +829,7 @@ void responsesHandle(const HttpRequest& req, HttpResponseWriter& w) {
         r.code = 0;
     }
     const bool incomplete = r.finishReason == "length" || r.finishReason == "content_filter";
+    logRequestFailure("responses", caps.configName, *acc, r);
     const char* itemStatus = r.ok && !incomplete ? "completed" : "incomplete";
     auto toolResults = tac.take();
 

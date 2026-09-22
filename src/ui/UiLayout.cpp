@@ -41,5 +41,4 @@ R modelComboBox(int width) { return { 60, 447, width - 120, FieldMetrics::height
 R portBox(int) { return { 240, 129, 90, FieldMetrics::height }; }
 R hourBox(int) { return { 440, 405, 52, FieldMetrics::height }; }
 R minuteBox(int) { return { 528, 405, 52, FieldMetrics::height }; }
-R logLevelBox(int) { return { 240, 501, 180, FieldMetrics::height }; }
 }

@@ -224,6 +224,7 @@ UpResult upstreamSolo(const UpRequest& req, Account& acc, const ModelCaps& caps,
         r.error = "打开失败: " + (stream ? stream->error : std::string("null"));
         return r;
     }
+    r.httpStatus = stream->status;
     if (stream->status != 200) {
         std::string line, errBody;
         while (stream->readLine(line) && errBody.size() < 800) errBody += line + "\n";
@@ -434,7 +435,8 @@ UpResult upstreamSolo(const UpRequest& req, Account& acc, const ModelCaps& caps,
     }
     if (!r.error.empty()) return r;
     if (!sawDone) {
-        r.error = "solo 流未正常终止";
+        r.error = (queue.waiting ? "上游排队期间：" : "") +
+            (stream->error.empty() ? std::string("上游提前关闭流，未收到结束事件") : stream->error);
         r.code = -1;
         return r;
     }

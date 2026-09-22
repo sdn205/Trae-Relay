@@ -42,7 +42,7 @@ constexpr CtrlDef kCtrlDefs[] = {
     { IDC_CHK_CHECKIN, Ck::Check, FBody, PAGE_SETTINGS },
     { IDC_ED_HOUR, Ck::Edit, FValue, PAGE_SETTINGS, hourBox },
     { IDC_ED_MINUTE, Ck::Edit, FValue, PAGE_SETTINGS, minuteBox },
-    { IDC_CB_LOGLEVEL, Ck::Combo, FValue, PAGE_SETTINGS, logLevelBox },
+    { IDC_CHK_LOGGING, Ck::Check, FBody, PAGE_SETTINGS },
     { IDC_BTN_PAGE_PREV, Ck::PagerBtn, FBody, PAGE_USAGE },
     { IDC_BTN_PAGE_NEXT, Ck::PagerBtn, FBody, PAGE_USAGE },
     { IDC_PAGER_SLOT0, Ck::PagerSlot, FBody, PAGE_USAGE },
