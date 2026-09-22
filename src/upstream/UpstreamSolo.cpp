@@ -234,6 +234,18 @@ UpResult upstreamSolo(const UpRequest& req, Account& acc, const ModelCaps& caps,
     }
 
     bool sawDone = false, aborted = false;
+    // Each stream owns its queue count, including on errors and early returns.
+    struct QueueScope {
+        Account& account;
+        bool waiting = false;
+        void set(bool value) {
+            if (waiting == value) return;
+            waiting = value;
+            if (value) ++account.queued;
+            else --account.queued;
+        }
+        ~QueueScope() { set(false); }
+    } queue{acc};
     std::string lastResp, lastReason;
     // 原生 function calling：上游 tool_calls 为流式增量（首帧 id/name，
     // 后续帧按 index 追加 arguments 片段）。先按 index 累积，done 时一次性
@@ -264,6 +276,15 @@ UpResult upstreamSolo(const UpRequest& req, Account& acc, const ModelCaps& caps,
     sse.setHandler([&](const std::string& evName, const std::string& payload) -> bool {
         std::string ev = evName.empty() ? "message" : evName;
         for (auto& c : ev) c = (char)tolower((unsigned char)c);
+        if (ev == "request_wait_in_queue" || ev == "queue_begin") {
+            queue.set(true);
+            return true;
+        }
+        if (ev == "queue_end") {
+            queue.set(false);
+            return true;
+        }
+        if (ev == "done" || ev == "error" || payload == "[DONE]") queue.set(false);
         if (payload == "[DONE]") {
             sawDone = true;
             return false;
@@ -304,8 +325,7 @@ UpResult upstreamSolo(const UpRequest& req, Account& acc, const ModelCaps& caps,
             AccountPool::instance().updateCreditsFromEvent(acc, data);
             return true;
         }
-        if (ev == "request_wait_in_queue" || ev == "queue_begin" || ev == "queue_end" ||
-            ev == "progress_notice" || ev == "metadata" || ev == "extra_info" || ev == "timing_cost")
+        if (ev == "progress_notice" || ev == "metadata" || ev == "extra_info" || ev == "timing_cost")
             return true;
         if (ev == "done") {
             // 工具调用参数在 done 前已累积完整，先于结束事件下发
@@ -316,6 +336,7 @@ UpResult upstreamSolo(const UpRequest& req, Account& acc, const ModelCaps& caps,
             return false;
         }
         if (ev == "output" || ev == "message" || ev == "text") {
+            queue.set(false);
             // 原生工具调用（流式增量，按 index 累积，done 时统一 flush）
             const Json* tcs = data.find("tool_calls");
             if (tcs && tcs->isArray()) {

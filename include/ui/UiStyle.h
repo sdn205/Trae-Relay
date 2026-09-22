@@ -23,6 +23,7 @@ inline constexpr COLORREF C_ACCENT_INK = RGB(11, 127, 96);
 inline constexpr COLORREF C_CORAL = RGB(206, 74, 58);
 inline constexpr COLORREF C_AMBER = RGB(169, 112, 26);
 inline constexpr COLORREF C_REQUEST = RGB(37, 99, 235);
+inline constexpr COLORREF C_QUEUED = RGB(234, 179, 8);
 inline constexpr COLORREF C_DISABLED_TEXT = RGB(156, 168, 163);
 inline constexpr COLORREF C_DISABLED_ARROW = RGB(180, 190, 186);
 inline constexpr COLORREF C_DISABLED_ACCENT = RGB(150, 200, 185);

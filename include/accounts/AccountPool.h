@@ -22,6 +22,7 @@ struct Account {
     std::atomic<double> credits{ -1 };       // -1 = 未知
     std::atomic<int> payIdentity{ -1 };      // ide_user_pay_status.user_pay_identity：-1 未知，0=Free，>0 付费档
     std::atomic<int> active{ 0 };            // 当前并发会话数
+    std::atomic<int> queued{ 0 };            // 当前上游排队会话数
     std::atomic<long long> lastUsedTs{ 0 };
     std::atomic<long long> lastRequestTs{ 0 };
     std::mutex refreshMtx;                   // 令牌刷新串行化

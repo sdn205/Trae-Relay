@@ -63,8 +63,10 @@ void WindowController::paintStatusPage(Canvas& dc, int width, int) {
         paintGroupLabel(dc, creditsX, 164, L"积分");
         paintGroupLabel(dc, requestsX, 164, L"今日请求");
         paintGroupLabel(dc, tokensX, 164, L"今日 Token");
-        const wchar_t* stateText = account->active.load() > 0 ? L"请求中" : L"正常";
-        COLORREF stateColor = account->active.load() > 0 ? C_REQUEST : C_ACCENT;
+        const bool queued = account->queued.load() > 0;
+        const bool active = account->active.load() > 0;
+        const wchar_t* stateText = queued ? L"排队中" : active ? L"请求中" : L"正常";
+        COLORREF stateColor = queued ? C_QUEUED : active ? C_REQUEST : C_ACCENT;
         dc.ellipse({62, 194, 8, 8}, stateColor);
         drawText(dc, stateText, { 78, 182, valueWidth - 18, 32 }, FBody, C_TEXT,
                  DT_LEFT | DT_SINGLELINE | DT_VCENTER);
@@ -223,7 +225,7 @@ void WindowController::refreshStatusPage(HWND) {
     if (hasAccount) {
         const auto& account = AccountPool::instance().accounts().front();
         current.nickname = toWide(account->nickname);
-        current.state = account->active.load() > 0 ? 2 : 3;
+        current.state = account->queued.load() > 0 ? 4 : account->active.load() > 0 ? 2 : 3;
         double amount = account->credits.load();
         wchar_t amountText[64]{};
         if (amount >= 0) swprintf(amountText, 64, L"%.2f", amount);
