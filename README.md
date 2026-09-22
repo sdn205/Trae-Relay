@@ -1,6 +1,6 @@
 ﻿# Trae Relay
 
-当前版本：`0.1`
+当前版本：`0.11`
 
 Windows 原生的 Trae 本地 API 转接工具，将当前用户已登录的 Trae 账号提供为 OpenAI 兼容接口。单个 EXE 即可运行，无需 Python、Node.js 或 Docker。
 
@@ -19,6 +19,9 @@ Windows 原生的 Trae 本地 API 转接工具，将当前用户已登录的 Tra
 - 函数工具、Responses 自定义工具、命名空间工具
 - 多轮会话、思考档位、Max 模式
 - 账号发现、令牌刷新、积分和使用记录
+- 排队状态、今日 Token 和今日积分消耗
+- 模型目录启动拉取，成功后每小时刷新，失败后每 5 分钟重试
+- 日志开关与请求失败原因记录
 - 托盘、开机自启动、自动签到、局域网访问
 
 ## 使用环境
@@ -88,6 +91,7 @@ API 支持 `Authorization: Bearer <key>` 和 `X-API-Key: <key>`。开启“任�
 | `responses.sessionCacheSize` | `64` | Responses 会话缓存数量 |
 | `responses.sessionCachePersist` | `false` | 是否保存会话到磁盘 |
 | `logging.level` | `info` | 日志级别 |
+| `logging.enabled` | `true` | 开启日志，可在偏好设置中即时切换 |
 
 开启局域网访问后，其他设备使用 `http://电脑IP:8317/v1`，并放行 Windows 防火墙端口。服务只提供 HTTP，请在可信网络中使用。
 
@@ -127,7 +131,6 @@ src/                    C++ 源码、资源和版本模板
 include/                头文件
 docs/images/预览.png    软件界面预览图
 CMakeLists.txt          CMake 构建配置
-config.example.json     配置示例
 README.md               项目说明
 ```
 
@@ -138,7 +141,7 @@ README.md               项目说明
 | 没有发现账号 | 确认当前用户已登录 Trae，然后重启 Relay |
 | 模型不可用 | 确认 Trae 账号权限和模型 ID，并查看 `logs/` |
 | 401 | 使用“运行总览”中的 API Key |
-| 503 | 检查账号、额度、冷却和并发数 |
+| 503 | 检查账号是否已发现、并发数是否已满 |
 | 端口启动失败 | 更换端口或关闭占用端口的程序 |
 | 关闭窗口后仍在运行 | 程序默认最小化到托盘，在托盘菜单选择“退出” |
 
