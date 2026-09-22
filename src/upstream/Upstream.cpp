@@ -38,12 +38,9 @@ http::Headers ideHeaders(const Account& acc, const std::string& ideVersion,
 }
 
 // ---------- R5 / R6 clamp（用户意愿 × 模型能力） ----------
-// 线上档位别名归一：chat_v3 目录用 extra_high 表示“极高”，部分客户端传
-// max/ultra；内部统一用 xhigh 表示最高档，light 归一为 low。
+// Trae 当前模型目录原生档位为 low/high/extra_high。
 std::string normalizeEffortValue(std::string v) {
     std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) { return (char)tolower(c); });
-    if (v == "extra_high" || v == "x-high" || v == "x_high" || v == "max" || v == "ultra") return "xhigh";
-    if (v == "light") return "low";
     return v;
 }
 

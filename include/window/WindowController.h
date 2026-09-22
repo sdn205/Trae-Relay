@@ -124,6 +124,7 @@ private:
     bool refreshModelSettings(HWND);
     void applyModelSettings(HWND hwnd);
     bool supportsEffort(const ModelCaps& caps, const std::string& effort);
+    std::string nativeEffortFor(Effort effort, const ModelCaps& caps);
     void loadModelSelection(HWND);
     void paintSettingsPage(visual::Canvas& dc, int width, int);
     void layoutSettingsPage();

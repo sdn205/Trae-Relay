@@ -2,7 +2,6 @@
 #include "api/Facade.h"
 #include "common/Crypto.h"
 #include "common/Log.h"
-#include "upstream/ReasoningEffort.h"
 #include "common/Settings.h"
 #include <chrono>
 #include <cmath>
@@ -34,9 +33,8 @@ bool resolveSettings(Account& acc, const std::string& requested, const std::stri
     rs.configName = caps.configName;
     rs.displayName = (mc && !mc->displayName.empty()) ? mc->displayName : caps.displayName;
 
-    // ===== R5 思考强度 =====
-    // 固定 solo 通道：档位只通过 system 前缀注入生效（见 UpstreamSolo.cpp），
-    // 不再有"原生字段/前缀"写入方式选择。
+    // ===== Trae 原生思考强度 =====
+    // 档位只作为 reasoning_effort 透传给上游，不改写 system 消息。
     std::string wantEffort = effortOverride;
     if (wantEffort.empty() && mc && !mc->reasoningEffort.empty()) wantEffort = mc->reasoningEffort;
     if (wantEffort.empty() && (!mc || mc->reasoningEffort.empty())) wantEffort = cfg->defaultReasoningEffort;

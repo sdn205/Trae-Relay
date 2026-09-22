@@ -42,7 +42,6 @@ set(TRAE_SOURCES
     ${SRC}/accounts/Storage.cpp
     ${SRC}/accounts/TokenRefresh.cpp
     ${SRC}/upstream/ModelCatalog.cpp
-    ${SRC}/upstream/ReasoningEffort.cpp
     ${SRC}/upstream/Upstream.cpp
     ${SRC}/upstream/UpstreamSolo.cpp
     ${SRC}/common/Crypto.cpp
@@ -76,7 +75,6 @@ set(TRAE_HEADERS
     ${INC}/accounts/Storage.h
     ${INC}/accounts/TokenRefresh.h
     ${INC}/upstream/ModelCatalog.h
-    ${INC}/upstream/ReasoningEffort.h
     ${INC}/upstream/Upstream.h
     ${INC}/common/Crypto.h
     ${INC}/common/Http.h

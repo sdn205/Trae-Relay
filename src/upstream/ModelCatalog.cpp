@@ -36,12 +36,7 @@ static std::string normalizeEffort(std::string value) {
     size_t b = value.find_last_not_of(" \t");
     if (a == std::string::npos) return {};
     value = value.substr(a, b - a + 1);
-    // Trae 当前接口对内置模型返回 light，归一到客户端协议的 low；
-    // chat_v3 目录用 extra_high 表示极高，归一到内部 xhigh。
-    if (value == "light") return "low";
-    if (value == "extra_high" || value == "x-high" || value == "x_high" ||
-        value == "max" || value == "ultra")
-        return "xhigh";
+    // 模型目录值直接使用 Trae 原生档位。
     return value;
 }
 
@@ -302,14 +297,11 @@ static void capsFromModelJson(const Json& m, ModelCaps& c) {
     }
     const Json* reo = m.find("reasoning_effort_options");
     if (reo && reo->isArray()) {
-        static const char* wl[] = { "none", "light", "low", "medium", "high", "xhigh", "max" };
         for (size_t i = 0; i < reo->size(); ++i) {
             if (!reo->at(i).isString()) continue;
             std::string lv = normalizeEffort(reo->at(i).asString());
-            for (auto w : wl) {
-                if (lv == w && std::find(c.effortOptionsExt.begin(), c.effortOptionsExt.end(), lv) == c.effortOptionsExt.end())
-                    c.effortOptionsExt.push_back(lv);
-            }
+            if (!lv.empty() && std::find(c.effortOptionsExt.begin(), c.effortOptionsExt.end(), lv) == c.effortOptionsExt.end())
+                c.effortOptionsExt.push_back(lv);
         }
         if (!c.effortOptionsExt.empty()) {
             std::string de = jstr(m, { "default_reasoning_effort" }, "");

@@ -3,7 +3,6 @@
 #include "accounts/AccountPool.h"
 #include "common/Crypto.h"
 #include "common/Log.h"
-#include "upstream/ReasoningEffort.h"
 #include "common/Settings.h"
 #include "common/SseParser.h"
 #include <map>
@@ -90,22 +89,9 @@ UpResult upstreamSolo(const UpRequest& req, Account& acc, const ModelCaps& caps,
     auto cfg = settings::get();
     std::string configName = caps.configName.empty() ? req.model : caps.configName;
 
-    // R5：solo 通道无原生字段 → 前缀注入
-    std::string prefix;
-    if (!req.reasoningEffort.empty()) {
-        prefix = effort::wrap(effort::prefixFor(configName, req.reasoningEffort));
-        if (!prefix.empty()) LOG_I("R5 生效路径 effort=%s source=prefix(solo)", req.reasoningEffort.c_str());
-        else LOG_I("R5 无匹配注入串 effort=%s source=none(model=%s)", req.reasoningEffort.c_str(), configName.c_str());
-    }
-
     Json body = Json::object();
     Json messages = Json::array();
-    bool sysDone = false;
     // 工具调用走上游原生 function calling（body.tools），不再注入文本协议
-    // preamble —— 文本形态的工具协议会被上游拦截挂起。此处仅追加思考档位前缀。
-    auto appendProtocols = [&](std::string& text) {
-        if (!prefix.empty()) text += (text.empty() ? "" : "\n\n") + prefix;
-    };
     for (const auto& m : req.messages) {
         std::string role = m.role == "developer" ? "system" : m.role;
         if (role == "tool") {
@@ -141,38 +127,11 @@ UpResult upstreamSolo(const UpRequest& req, Account& acc, const ModelCaps& caps,
             messages.push_back(msg);
             continue;
         }
-        if (role == "system" && !sysDone) {
-            sysDone = true;
-            std::string text = effort::stripBlock(m.content);
-            appendProtocols(text);
-            appendSoloText(messages, "system", text);
+        if (role == "system") {
+            appendSoloChatMessage(messages, "system", m);
             continue;
         }
-        if (role == "user" && !sysDone && !prefix.empty()) {
-            // 无 system → 前置一条思考档位前缀
-            std::string proto;
-            appendProtocols(proto);
-            appendSoloText(messages, "system", proto);
-            sysDone = true;
-        }
         appendSoloChatMessage(messages, role, m);
-    }
-    if (!sysDone && !prefix.empty()) {
-        std::string proto;
-        appendProtocols(proto);
-        Json sm = Json::object();
-        sm.set("role", Json("system"));
-        Json arr = Json::array();
-        Json t = Json::object();
-        t.set("type", Json("text"));
-        t.set("text", Json(proto));
-        arr.push_back(t);
-        sm.set("content", arr);
-        // 插到最前
-        Json newArr = Json::array();
-        newArr.push_back(sm);
-        for (size_t i = 0; i < messages.size(); ++i) newArr.push_back(messages.at(i));
-        messages = newArr;
     }
     if (messages.empty()) appendSoloText(messages, "user", "");
     body.set("messages", messages);
@@ -198,6 +157,11 @@ UpResult upstreamSolo(const UpRequest& req, Account& acc, const ModelCaps& caps,
     body.set("config_source", Json(caps.configSource));
     body.set("is_custom_model", Json(false));
     body.set("provider", Json(caps.provider));
+    // Trae 原生思考档位：官方请求体使用顶层 reasoning_effort 字段。
+    if (!req.reasoningEffort.empty()) {
+        body.set("reasoning_effort", Json(req.reasoningEffort));
+        LOG_I("原生思考档位：effort=%s source=reasoning_effort", req.reasoningEffort.c_str());
+    }
     // 原生 function calling：tools[].function.parameters 上游要求为 JSON
     // 字符串（OpenAI 为对象）；工具调用以 tool_calls 增量事件返回。
     if (!req.tools.empty()) {

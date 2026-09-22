@@ -173,7 +173,7 @@ struct UpRequest {
     std::vector<ChatMessage> messages;
     std::vector<ToolDef> tools;           // 归一化工具声明
     bool stream = true;
-    std::string reasoningEffort;          // "" = 不生效（solo 走 system 前缀注入）
+    std::string reasoningEffort;          // "" = 不设置；非空时透传 Trae 原生 reasoning_effort
     bool maxMode = false;                 // Max / 1M 上下文
     long long maxContextWindow = 0;       // Max 上下文窗口值
 };
@@ -214,7 +214,7 @@ void logRequestFailure(const char* endpoint, const std::string& model, const Acc
 
 // 档位白名单校验 + clamp（不合法 → 不生效，返回 ""）
 std::string clampEffort(const ModelCaps& caps, const std::string& want);
-// 线上档位别名归一（extra_high/max → xhigh，light → low）
+// Trae 原生档位归一（仅大小写归一，不转换档位名称）
 std::string normalizeEffortValue(std::string v);
 // Max 能力 clamp
 bool clampMaxMode(const ModelCaps& caps, bool want, long long cfgWindow, long long& outWindow);

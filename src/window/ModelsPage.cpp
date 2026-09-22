@@ -7,7 +7,7 @@ namespace ui {
 using namespace visual;
 
 const char* WindowController::effortValue(Effort e) {
-    return e == EffortLow ? "low" : e == EffortHigh ? "high" : "xhigh";
+    return e == EffortLow ? "low" : e == EffortHigh ? "high" : "extra_high";
 }
 
 WindowController::Effort WindowController::effortFromId(int id) {
@@ -121,7 +121,10 @@ void WindowController::applyModelSettings(HWND) {
     std::string modelName = selectedModelName();
     if (modelName.empty()) return;
     auto& cfg = Config::instance();
+    int sel = ComboBox_GetCurSel(GetDlgItem(pageStatus_, IDC_CB_MODEL));
     std::string effort = effortValue(effort_);
+    if (sel >= 0 && sel < (int)modelCatalogCaps_.size())
+        effort = nativeEffortFor(effort_, modelCatalogCaps_[sel]);
     bool maxEnabled = isChecked(IDC_CHK_MAX);
     ModelConfig model;
     const ModelConfig* old = cfg.modelConfig(modelName);
@@ -150,6 +153,28 @@ bool WindowController::supportsEffort(const ModelCaps& caps, const std::string& 
            std::find(caps.effortOptionsExt.begin(), caps.effortOptionsExt.end(), effort) != caps.effortOptionsExt.end();
 }
 
+std::string WindowController::nativeEffortFor(Effort effort, const ModelCaps& caps) {
+    std::vector<std::string> options;
+    options.insert(options.end(), caps.effortOptions.begin(), caps.effortOptions.end());
+    options.insert(options.end(), caps.effortOptionsExt.begin(), caps.effortOptionsExt.end());
+    auto pick = [&](std::initializer_list<const char*> names) {
+        for (auto name : names)
+            for (const auto& option : options)
+                if (option == name) return option;
+        return std::string();
+    };
+    if (effort == EffortLow) {
+        std::string value = pick({ "light", "low" });
+        return value.empty() ? effortValue(effort) : value;
+    }
+    if (effort == EffortHigh) {
+        std::string value = pick({ "high" });
+        return value.empty() ? effortValue(effort) : value;
+    }
+    std::string value = pick({ "extra_high" });
+    return value.empty() ? effortValue(effort) : value;
+}
+
 void WindowController::loadModelSelection(HWND) {
     HWND combo = GetDlgItem(pageStatus_, IDC_CB_MODEL);
     int sel = ComboBox_GetCurSel(combo);
@@ -162,7 +187,7 @@ void WindowController::loadModelSelection(HWND) {
     std::string effort = model && !model->reasoningEffort.empty() ? model->reasoningEffort
                                                                   : cfg.defaultReasoningEffort;
     effort_ = effort == "low" ? EffortLow
-               : (effort == "xhigh" || effort == "extra_high") ? EffortXHigh
+               : effort == "extra_high" ? EffortXHigh
                                                                : EffortHigh;
     for (int id : { IDC_BTN_EFF0, IDC_BTN_EFF1, IDC_BTN_EFF2 })
         InvalidateRect(GetDlgItem(pageStatus_, id), nullptr, FALSE);
@@ -180,9 +205,9 @@ void WindowController::loadModelSelection(HWND) {
     ModelCaps caps = modelCatalogCaps_[sel];
     enableControl(GetDlgItem(pageStatus_, IDC_CHK_MAX), caps.maxMode);
     if (!caps.maxMode) setChecked(IDC_CHK_MAX, false);
-    enableControl(GetDlgItem(pageStatus_, IDC_BTN_EFF0), supportsEffort(caps, "low"));
-    enableControl(GetDlgItem(pageStatus_, IDC_BTN_EFF1), supportsEffort(caps, "high"));
-    enableControl(GetDlgItem(pageStatus_, IDC_BTN_EFF2), supportsEffort(caps, "xhigh"));
+    enableControl(GetDlgItem(pageStatus_, IDC_BTN_EFF0), supportsEffort(caps, nativeEffortFor(EffortLow, caps)));
+    enableControl(GetDlgItem(pageStatus_, IDC_BTN_EFF1), supportsEffort(caps, nativeEffortFor(EffortHigh, caps)));
+    enableControl(GetDlgItem(pageStatus_, IDC_BTN_EFF2), supportsEffort(caps, nativeEffortFor(EffortXHigh, caps)));
 }
 
 } // namespace ui

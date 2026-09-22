@@ -658,9 +658,7 @@ void responsesHandle(const HttpRequest& req, HttpResponseWriter& w) {
     const Json* rea = body.find("reasoning");
     if (rea && rea->isObject()) {
         std::string e = rea->get("effort", Json("")).asString();
-        if (e == "low" || e == "high" || e == "xhigh" || e == "extra_high") effortOverride = e;
-        else if (e == "max" || e == "ultra") effortOverride = "xhigh";
-        else if (e == "medium") effortOverride = "high";
+        if (!e.empty() && e != "none" && e != "off") effortOverride = e;
         // none/off → 不覆盖
     }
 
